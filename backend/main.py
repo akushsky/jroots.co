@@ -33,9 +33,29 @@ async def startup():
         await conn.run_sync(models.Base.metadata.create_all)
 
 
-@app.get("/api/search", response_model=list[schemas.SearchObjectSchema])
-async def search(q: str, db: AsyncSession = Depends(database.get_db)):
+@app.get("/api/search", response_model=schemas.PaginatedResults)
+async def search(q: str,
+                 skip: int = 0,
+                 limit: int = 20,
+                 db: AsyncSession = Depends(database.get_db)
+                 ):
     like_query = f"%{q}%"
+
+    total_stmt = (
+        select(func.count(models.SearchObject.id))
+        .join(models.Image, models.SearchObject.image_id == models.Image.id)
+        .where(
+            or_(
+                models.SearchObject.text_content.ilike(like_query),
+                models.Image.image_key.ilike(like_query),
+                models.Image.image_path.ilike(like_query),
+                func.similarity(models.SearchObject.text_content, q) > 0.3,
+                func.similarity(models.Image.image_key, q) > 0.3,
+                func.similarity(models.Image.image_path, q) > 0.3,
+                )
+        )
+    )
+    total = await db.scalar(total_stmt)
 
     results = await db.execute(
         select(models.SearchObject,
@@ -55,10 +75,11 @@ async def search(q: str, db: AsyncSession = Depends(database.get_db)):
                 func.similarity(models.SearchObject.text_content, q) > 0.3,
                 func.similarity(models.Image.image_key, q) > 0.3,
                 func.similarity(models.Image.image_path, q) > 0.3,
-                )
+            )
         )
         .order_by(text("relevance DESC"))
-        .limit(20)
+        .offset(skip)
+        .limit(limit)
     )
 
     search_objects = results.all()
@@ -72,7 +93,7 @@ async def search(q: str, db: AsyncSession = Depends(database.get_db)):
         obj_data.similarity_score = round(score * 100)
         objects_with_urls.append(obj_data)
 
-    return objects_with_urls
+    return {"items": objects_with_urls, "total": total}
 
 
 @app.post("/api/admin/login")
@@ -114,13 +135,16 @@ async def create_object(
     return search_obj
 
 
-@app.get("/api/admin/objects", response_model=list[schemas.SearchObjectSchema])
+@app.get("/api/admin/objects", response_model=schemas.PaginatedResults)
 async def list_objects(
         skip: int = 0,
         limit: int = 20,
         db: AsyncSession = Depends(database.get_db),
         user=Depends(auth.get_current_admin)
 ):
+    total_stmt = select(func.count()).select_from(models.SearchObject)
+    total = await db.scalar(total_stmt)
+
     result = await db.execute(
         select(models.SearchObject)
         .options(selectinload(models.SearchObject.image).selectinload(models.Image.source))
@@ -139,7 +163,8 @@ async def list_objects(
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
         objects_with_urls.append(obj_data)
 
-    return objects_with_urls
+    return {"items": objects_with_urls, "total": total}
+
 
 @app.put("/api/admin/objects/{object_id}", response_model=schemas.SearchObjectSchema)
 async def update_object(
@@ -161,7 +186,8 @@ async def update_object(
     if image_file:
         image_binary = await image_file.read()
         image_source = await db.get(models.ImageSource, image_source_id) if image_source_id else None
-        image = await crud.save_unique_image(db, image_source.source_name if image_source else "default", image_source_id, image_binary)
+        image = await crud.save_unique_image(db, image_source.source_name if image_source else "default",
+                                             image_source_id, image_binary)
         obj.image_id = image.id
 
     await db.commit()
@@ -169,6 +195,7 @@ async def update_object(
     # Load relationships explicitly
     await db.refresh(obj, attribute_names=['image'])
     return obj
+
 
 @app.delete("/api/admin/objects/{object_id}")
 async def delete_object(object_id: int, db: AsyncSession = Depends(database.get_db),
@@ -206,10 +233,12 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
     headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
     return StreamingResponse(io.BytesIO(image.image_data), media_type="image/jpeg", headers=headers)
 
+
 @app.get("/api/admin/image-sources", response_model=list[schemas.ImageSourceSchema])
 async def list_image_sources(db: AsyncSession = Depends(database.get_db)):
     result = await db.execute(select(models.ImageSource))
     return result.scalars().all()
+
 
 @app.get("/api/images/{image_id}/thumbnail", response_class=StreamingResponse)
 async def get_thumbnail(image_id: int, db: AsyncSession = Depends(database.get_db)):

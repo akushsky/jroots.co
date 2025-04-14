@@ -3,6 +3,8 @@ import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import {searchObjects} from "../api/api";
 import Highlighter from "react-highlight-words";
+import {Button} from "@/components/ui/button.tsx";
+import {getPaginationPages} from "@/api/paginate.ts";
 
 interface ImageSource {
     id: number;
@@ -24,16 +26,28 @@ export default function SearchPage() {
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
 
+    const [page, setPage] = useState(0);
+    const [total, setTotal] = useState(0);
+    const pageSize = 1;
+
+    useEffect(() => {
+        setPage(0);
+    }, [query]);
+
     useEffect(() => {
         const delay = setTimeout(async () => {
             if (query.trim()) {
-                const data = await searchObjects(query);
-                setResults(data);
+                const res = await searchObjects(query, page, pageSize);
+                setResults(res.items);
+                setTotal(res.total);
             } else setResults([]);
         }, 500);
 
         return () => clearTimeout(delay);
-    }, [query]);
+    }, [query, page]);
+
+    const pageCount = Math.ceil(total / pageSize);
+    const visiblePages = getPaginationPages(page, pageCount);
 
     return (
         <div className="max-w-3xl mx-auto mt-10">
@@ -80,6 +94,21 @@ export default function SearchPage() {
                         </div>
                     </Card>
                 ))}
+                <div className="flex justify-center gap-2 mt-4 flex-wrap">
+                    {visiblePages.map((p, idx) =>
+                        p === 'ellipsis' ? (
+                            <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">…</span>
+                        ) : (
+                            <Button
+                                key={p}
+                                variant={p === page ? "default" : "outline"}
+                                onClick={() => setPage(p)}
+                            >
+                                {p + 1}
+                            </Button>
+                        )
+                    )}
+                </div>
             </div>
             {popupImage && (
                 <div

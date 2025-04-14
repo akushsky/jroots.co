@@ -43,3 +43,10 @@ class AdminEventSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PaginatedResults(BaseModel):
+    items: list[SearchObjectSchema]
+    total: int
+
+    class Config:
+        from_attributes = True
