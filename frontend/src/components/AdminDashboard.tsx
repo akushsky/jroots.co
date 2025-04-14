@@ -3,6 +3,7 @@ import {apiClient, createSearchObject, deleteSearchObject, searchObjects, update
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
+import Highlighter from "react-highlight-words";
 
 interface ImageSource {
     id: number;
@@ -12,6 +13,7 @@ interface ImageSource {
 interface FormState {
     text_content: string;
     image_path: string;
+    image_key: string;
     image_source_id: number | null;
     image_file: File | null;
     image_file_sha512?: string;
@@ -27,6 +29,7 @@ export default function AdminDashboard() {
     const [form, setForm] = useState<FormState>({
         text_content: "",
         image_path: "",
+        image_key: "",
         image_source_id: null,
         image_file: null,
         image_file_sha512: "",
@@ -53,6 +56,7 @@ export default function AdminDashboard() {
         setForm({
             text_content: "",
             image_path: "",
+            image_key: "",
             image_source_id: null,
             image_file: null,
             image_file_sha512: "",
@@ -63,7 +67,8 @@ export default function AdminDashboard() {
     const handleClone = (obj: any) => {
         setForm({
             text_content: obj.text_content,
-            image_path: obj.image_path,
+            image_path: obj.image?.image_path || "",
+            image_key: obj.image?.image_key || "",
             image_source_id: obj.image?.source?.id || null,
             image_file: null,
             image_file_sha512: obj.image?.sha512_hash || null,
@@ -75,6 +80,7 @@ export default function AdminDashboard() {
         setForm({
             text_content: obj.text_content,
             image_path: obj.image_path,
+            image_key: obj.image?.image_key || "",
             image_source_id: obj.image?.source?.id || null,
             image_file: null,
         });
@@ -112,7 +118,7 @@ export default function AdminDashboard() {
         const formData = new FormData();
         formData.append("text_content", form.text_content);
         formData.append("image_path", form.image_path);
-        formData.append("image_key", imageSources.find(src => src.id === form.image_source_id)?.source_name || "");
+        formData.append("image_key", form.image_key);
         formData.append("image_source_id", form.image_source_id!.toString());
         if (form.image_file)
             formData.append("image_file", form.image_file);
@@ -134,6 +140,8 @@ export default function AdminDashboard() {
                        onChange={(e) => setForm({...form, text_content: e.target.value})}/>
                 <Input placeholder="Image path" value={form.image_path}
                        onChange={(e) => setForm({...form, image_path: e.target.value})}/>
+                <Input placeholder="Image key" value={form.image_key}
+                       onChange={(e) => setForm({...form, image_key: e.target.value})}/>
 
                 {/* Dropdown for image sources */}
                 <select
@@ -179,6 +187,8 @@ export default function AdminDashboard() {
                                        onChange={(e) => setForm({...form, text_content: e.target.value})}/>
                                 <Input value={form.image_path}
                                        onChange={(e) => setForm({...form, image_path: e.target.value})}/>
+                                <Input value={form.image_key}
+                                       onChange={(e) => setForm({...form, image_key: e.target.value})}/>
                                 <select
                                     className="w-full p-2 border rounded"
                                     value={form.image_source_id !== null ? form.image_source_id : ""}
@@ -205,9 +215,19 @@ export default function AdminDashboard() {
                             </div>
                         ) : (
                             <>
-                                <div className="font-bold">{obj.text_content}</div>
+                                <div className="font-bold">
+                                    <Highlighter
+                                        searchWords={[query]}
+                                        autoEscape
+                                        textToHighlight={obj.text_content}
+                                    />
+                                </div>
                                 <div className="text-sm text-muted-foreground">
-                                    {obj.image?.image_path} ({obj.image?.source?.source_name})
+                                    <Highlighter
+                                        searchWords={[query]}
+                                        autoEscape
+                                        textToHighlight={`${obj.image?.image_path} (${obj.image?.source?.source_name}) ${obj.image?.image_key}`}
+                                    />
                                 </div>
                                 <img
                                     src={`http://localhost:8000${obj.thumbnail_url}`}

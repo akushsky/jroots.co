@@ -46,10 +46,9 @@ async def save_unique_image(db: AsyncSession,
     return new_image
 
 
-async def create_search_object(db: AsyncSession, text_content: str, image_path: str, image_id: int):
+async def create_search_object(db: AsyncSession, text_content: str, image_id: int):
     obj = SearchObject(
         text_content=text_content,
-        image_path=image_path,
         image_id=image_id
     )
     db.add(obj)
