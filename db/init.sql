@@ -21,8 +21,10 @@ CREATE TABLE search_objects
 );
 
 
--- Index for fuzzy search
+-- Indexes for fuzzy search
 CREATE INDEX idx_search_objects_text_trgm ON search_objects USING GIN (text_content gin_trgm_ops);
+CREATE INDEX idx_images_key_trgm ON images USING GIN (image_key gin_trgm_ops);
+CREATE INDEX idx_images_path_trgm ON images USING GIN (image_path gin_trgm_ops);
 
 -- Customer-generated events table
 CREATE TABLE admin_events

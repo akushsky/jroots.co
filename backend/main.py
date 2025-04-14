@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
@@ -38,28 +38,38 @@ async def search(q: str, db: AsyncSession = Depends(database.get_db)):
     like_query = f"%{q}%"
 
     results = await db.execute(
-        select(models.SearchObject)
-        .options(
-            selectinload(models.SearchObject.image).selectinload(models.Image.source)
-        )
+        select(models.SearchObject,
+               func.greatest(
+                   func.similarity(models.SearchObject.text_content, q),
+                   func.similarity(models.Image.image_key, q),
+                   func.similarity(models.Image.image_path, q),
+               ).label("relevance")
+               )
+        .join(models.Image, models.SearchObject.image_id == models.Image.id)
+        .options(selectinload(models.SearchObject.image).selectinload(models.Image.source))
         .where(
             or_(
-                models.SearchObject.text_content.ilike(like_query),  # wildcard search
-                func.similarity(models.SearchObject.text_content, q) > 0.3  # fuzzy search
-            )
+                models.SearchObject.text_content.ilike(like_query),
+                models.Image.image_key.ilike(like_query),
+                models.Image.image_path.ilike(like_query),
+                func.similarity(models.SearchObject.text_content, q) > 0.3,
+                func.similarity(models.Image.image_key, q) > 0.3,
+                func.similarity(models.Image.image_path, q) > 0.3,
+                )
         )
-        .order_by(func.similarity(models.SearchObject.text_content, q).desc())
+        .order_by(text("relevance DESC"))
         .limit(20)
     )
 
-    search_objects = results.scalars().all()
+    search_objects = results.all()
 
     objects_with_urls = []
-    for obj in search_objects:
+    for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
         if obj.image:
             obj_data.image_url = f"/api/images/{obj.image.id}"
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+        obj_data.similarity_score = round(score * 100)
         objects_with_urls.append(obj_data)
 
     return objects_with_urls
@@ -100,7 +110,7 @@ async def create_object(
         image_binary = await image_file.read()
         image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
 
-    search_obj = await crud.create_search_object(db, text_content, image_path, image.id)
+    search_obj = await crud.create_search_object(db, text_content, image.id)
     return search_obj
 
 

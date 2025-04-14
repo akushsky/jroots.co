@@ -28,6 +28,7 @@ class SearchObjectSchema(BaseModel):
     image: ImageSchema | None
     image_url: str | None = None  # Dynamic URL
     thumbnail_url: str | None = None
+    similarity_score: int | None = None
 
     class Config:
         from_attributes = True
