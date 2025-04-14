@@ -11,8 +11,11 @@ apiClient.interceptors.request.use((config) => {
     return config;
 });
 
-export const searchObjects = async (q: string) =>
-    (await apiClient.get(`/search?q=${encodeURIComponent(q)}`)).data;
+export const searchObjects = async (q: string, page: number, pageSize: number) =>
+    (await apiClient.get(`/search?q=${encodeURIComponent(q)}&skip=${page * pageSize}&limit=${pageSize}`)).data;
+
+export const fetchObjects = async (page: number, pageSize: number) =>
+    (await apiClient.get(`/admin/objects?skip=${page * pageSize}&limit=${pageSize}`)).data;
 
 export const adminLogin = async (username: string, password: string) =>
     (await apiClient.post("/admin/login", new URLSearchParams({username, password}))).data;

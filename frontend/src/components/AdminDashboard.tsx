@@ -1,9 +1,17 @@
 import {useState, useEffect} from "react";
-import {apiClient, createSearchObject, deleteSearchObject, searchObjects, updateSearchObject} from "../api/api";
+import {
+    apiClient,
+    createSearchObject,
+    deleteSearchObject,
+    fetchObjects,
+    searchObjects,
+    updateSearchObject
+} from "../api/api";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import Highlighter from "react-highlight-words";
+import {getPaginationPages} from "@/api/paginate.ts";
 
 interface ImageSource {
     id: number;
@@ -25,6 +33,10 @@ export default function AdminDashboard() {
     const [imageSources, setImageSources] = useState<ImageSource[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
 
+    const [page, setPage] = useState(0);
+    const [total, setTotal] = useState(0);
+    const pageSize = 1;
+
     const [editingId, setEditingId] = useState<number | null>(null);
     const [form, setForm] = useState<FormState>({
         text_content: "",
@@ -35,22 +47,28 @@ export default function AdminDashboard() {
         image_file_sha512: "",
     });
 
-    const fetchObjects = () => apiClient.get("/admin/objects").then(res => setObjects(res.data));
     const fetchSources = () => apiClient.get("/admin/image-sources").then(res => setImageSources(res.data));
 
     useEffect(() => {
         fetchSources();
+    }, []);
 
+    useEffect(() => {
         const delay = setTimeout(async () => {
             if (query.trim()) {
-                searchObjects(query).then(setObjects);
+                setPage(0);
+                const res = await searchObjects(query, page, pageSize);
+                setObjects(res.items);
+                setTotal(res.total);
             } else {
-                fetchObjects();
+                const res = await fetchObjects(page, pageSize);
+                setObjects(res.items);
+                setTotal(res.total);
             }
         }, 500);
 
         return () => clearTimeout(delay);
-    }, [query]);
+    }, [query, page]);
 
     const clearForm = () => {
         setForm({
@@ -98,13 +116,13 @@ export default function AdminDashboard() {
         await updateSearchObject(editingId!, formData);
 
         clearForm();
-        fetchObjects();
+        fetchObjects(page, pageSize);
     };
 
     const handleDelete = async (id: number) => {
         if (confirm("Are you sure you want to delete this object?")) {
             await deleteSearchObject(id);
-            fetchObjects();
+            fetchObjects(page, pageSize);
         }
     };
 
@@ -128,8 +146,11 @@ export default function AdminDashboard() {
         await createSearchObject(formData);
 
         clearForm();
-        fetchObjects();
+        fetchObjects(page, pageSize);
     };
+
+    const pageCount = Math.ceil(total / pageSize);
+    const visiblePages = getPaginationPages(page, pageCount);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
@@ -244,6 +265,21 @@ export default function AdminDashboard() {
                     </CardContent>
                 </Card>
             ))}
+            <div className="flex justify-center gap-2 mt-4 flex-wrap">
+                {visiblePages.map((p, idx) =>
+                    p === 'ellipsis' ? (
+                        <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">…</span>
+                    ) : (
+                        <Button
+                            key={p}
+                            variant={p === page ? "default" : "outline"}
+                            onClick={() => setPage(p)}
+                        >
+                            {p + 1}
+                        </Button>
+                    )
+                )}
+            </div>
             {popupImage && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
