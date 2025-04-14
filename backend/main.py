@@ -1,0 +1,211 @@
+import io
+from typing import Optional
+
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select, func, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from starlette.responses import StreamingResponse
+
+import auth
+import crud
+import database
+import models
+import schemas
+
+app = FastAPI()
+
+# noinspection PyTypeChecker
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+async def startup():
+    async with database.engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
+
+
+@app.get("/api/search", response_model=list[schemas.SearchObjectSchema])
+async def search(q: str, db: AsyncSession = Depends(database.get_db)):
+    like_query = f"%{q}%"
+
+    results = await db.execute(
+        select(models.SearchObject)
+        .options(
+            selectinload(models.SearchObject.image).selectinload(models.Image.source)
+        )
+        .where(
+            or_(
+                models.SearchObject.text_content.ilike(like_query),  # wildcard search
+                func.similarity(models.SearchObject.text_content, q) > 0.3  # fuzzy search
+            )
+        )
+        .order_by(func.similarity(models.SearchObject.text_content, q).desc())
+        .limit(20)
+    )
+
+    search_objects = results.scalars().all()
+
+    objects_with_urls = []
+    for obj in search_objects:
+        obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
+        if obj.image:
+            obj_data.image_url = f"/api/images/{obj.image.id}"
+            obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+        objects_with_urls.append(obj_data)
+
+    return objects_with_urls
+
+
+@app.post("/api/admin/login")
+async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = auth.authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
+    token = auth.create_access_token({"sub": user["username"]})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
+async def create_object(
+        text_content: str = Form(...),
+        image_path: str = Form(...),
+        image_key: str = Form(...),
+        image_source_id: int | None = Form(None),
+        image_file: Optional[UploadFile] = File(None),
+        image_file_sha512: Optional[str] = Form(None),
+        db: AsyncSession = Depends(database.get_db),
+        user=Depends(auth.get_current_admin)
+):
+    # Check if the image already exists
+    existing_image = await db.execute(
+        select(models.Image).where(
+            models.Image.sha512_hash == image_file_sha512
+        )
+    )
+    existing = existing_image.scalar_one_or_none()
+    if existing:
+        # If it exists, reuse the existing image
+        image = existing
+    else:
+        # If it doesn't exist, save the new image
+        image_binary = await image_file.read()
+        image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
+
+    search_obj = await crud.create_search_object(db, text_content, image_path, image.id)
+    return search_obj
+
+
+@app.get("/api/admin/objects", response_model=list[schemas.SearchObjectSchema])
+async def list_objects(
+        skip: int = 0,
+        limit: int = 20,
+        db: AsyncSession = Depends(database.get_db),
+        user=Depends(auth.get_current_admin)
+):
+    result = await db.execute(
+        select(models.SearchObject)
+        .options(selectinload(models.SearchObject.image).selectinload(models.Image.source))
+        .offset(skip)
+        .limit(limit)
+        .order_by(models.SearchObject.created_at.desc())
+    )
+    objects = result.scalars().all()
+
+    # Dynamically add image URLs
+    objects_with_urls = []
+    for obj in objects:
+        obj_data = schemas.SearchObjectSchema.model_validate(obj)
+        if obj.image:
+            obj_data.image_url = f"/api/images/{obj.image.id}"
+            obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+        objects_with_urls.append(obj_data)
+
+    return objects_with_urls
+
+@app.put("/api/admin/objects/{object_id}", response_model=schemas.SearchObjectSchema)
+async def update_object(
+        object_id: int,
+        text_content: str = Form(...),
+        image_path: str = Form(...),
+        image_source_id: int | None = Form(None),
+        image_file: UploadFile | None = File(None),
+        db: AsyncSession = Depends(database.get_db),
+        user=Depends(auth.get_current_admin)
+):
+    obj = await db.get(models.SearchObject, object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Object not found")
+
+    obj.text_content = text_content
+    obj.image_path = image_path
+
+    if image_file:
+        image_binary = await image_file.read()
+        image_source = await db.get(models.ImageSource, image_source_id) if image_source_id else None
+        image = await crud.save_unique_image(db, image_source.source_name if image_source else "default", image_source_id, image_binary)
+        obj.image_id = image.id
+
+    await db.commit()
+
+    # Load relationships explicitly
+    await db.refresh(obj, attribute_names=['image'])
+    return obj
+
+@app.delete("/api/admin/objects/{object_id}")
+async def delete_object(object_id: int, db: AsyncSession = Depends(database.get_db),
+                        user=Depends(auth.get_current_admin)):
+    obj = await db.get(models.SearchObject, object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Object not found")
+    await db.delete(obj)
+    await db.commit()
+    return {"status": "deleted", "object_id": object_id}
+
+
+@app.get("/api/admin/events", response_model=list[schemas.AdminEventSchema])
+async def get_events(db: AsyncSession = Depends(database.get_db), user=Depends(auth.get_current_admin)):
+    result = await db.execute(select(models.AdminEvent).order_by(models.AdminEvent.created_at.desc()))
+    return result.scalars().all()
+
+
+@app.put("/api/admin/events/{id}/resolve")
+async def resolve_event(id: int, db: AsyncSession = Depends(database.get_db), user=Depends(auth.get_current_admin)):
+    event = await db.get(models.AdminEvent, id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    event.is_resolved = True
+    await db.commit()
+    return {"status": "resolved"}
+
+
+@app.get("/api/images/{image_id}", response_class=StreamingResponse)
+async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
+    image = await db.get(models.Image, image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
+    return StreamingResponse(io.BytesIO(image.image_data), media_type="image/jpeg", headers=headers)
+
+@app.get("/api/admin/image-sources", response_model=list[schemas.ImageSourceSchema])
+async def list_image_sources(db: AsyncSession = Depends(database.get_db)):
+    result = await db.execute(select(models.ImageSource))
+    return result.scalars().all()
+
+@app.get("/api/images/{image_id}/thumbnail", response_class=StreamingResponse)
+async def get_thumbnail(image_id: int, db: AsyncSession = Depends(database.get_db)):
+    image = await db.get(models.Image, image_id)
+    if not image or not image.thumbnail_data:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+    headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
+    return StreamingResponse(io.BytesIO(image.thumbnail_data), media_type="image/jpeg", headers=headers)
