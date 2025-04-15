@@ -25,6 +25,7 @@ export default function SearchPage() {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
+    const [isZoomed, setIsZoomed] = useState(false);
 
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
@@ -35,13 +36,27 @@ export default function SearchPage() {
     }, [query]);
 
     useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setPopupImage(null);
+                setIsZoomed(false);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    useEffect(() => {
         const delay = setTimeout(async () => {
             if (query.trim()) {
                 const res = await searchObjects(query, page, pageSize);
                 setResults(res.items);
                 setTotal(res.total);
-            } else setResults([]);
-        }, 500);
+            } else {
+                setResults([]);
+                setTotal(0)
+            }
+        }, 300);
 
         return () => clearTimeout(delay);
     }, [query, page]);
@@ -113,14 +128,31 @@ export default function SearchPage() {
             {popupImage && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
-                    onClick={() => setPopupImage(null)}
+                    onClick={() => {
+                        setPopupImage(null);
+                        setIsZoomed(false);
+                    }}
                 >
-                    <img
-                        src={`http://localhost:8000${popupImage}`}
-                        alt="Popup"
-                        className="max-h-screen max-w-screen object-contain shadow-xl"
-                        onClick={(e) => e.stopPropagation()}
-                    />
+                    <div
+                        className={`max-w-full max-h-full overflow-${isZoomed ? 'auto' : 'hidden'}`}
+                        onClick={(e) => e.stopPropagation()} // prevent close on image click
+                    >
+                        <img
+                            src={`http://localhost:8000${popupImage}`}
+                            alt="Popup"
+                            className={`transition-all duration-300 shadow-2xl rounded ${
+                                isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                            }`}
+                            style={{
+                                width: isZoomed ? 'auto' : '100%',
+                                height: isZoomed ? 'auto' : 'auto',
+                                maxWidth: isZoomed ? 'none' : '100vw',
+                                maxHeight: isZoomed ? 'none' : '100vh',
+                                display: 'block',
+                            }}
+                            onClick={() => setIsZoomed((z) => !z)}
+                        />
+                    </div>
                 </div>
             )}
         </div>
