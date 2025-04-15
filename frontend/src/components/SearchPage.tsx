@@ -78,7 +78,7 @@ export default function SearchPage() {
                         <div className="relative">
                             <CardContent className="flex gap-4 items-center p-4">
                                 <img
-                                    src={`http://localhost:8000${result.thumbnail_url}`}
+                                    src={`${result.thumbnail_url}`}
                                     alt="result"
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
                                     onClick={() => setPopupImage(result.image_url)}
@@ -134,11 +134,11 @@ export default function SearchPage() {
                     }}
                 >
                     <div
-                        className={`max-w-full max-h-full overflow-${isZoomed ? 'auto' : 'hidden'}`}
+                        className={`max-w-full max-h-full ${isZoomed ? 'overflow-auto' : 'overflow-hidden'}`}
                         onClick={(e) => e.stopPropagation()} // prevent close on image click
                     >
                         <img
-                            src={`http://localhost:8000${popupImage}`}
+                            src={`${popupImage}`}
                             alt="Popup"
                             className={`transition-all duration-300 shadow-2xl rounded ${
                                 isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
