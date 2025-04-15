@@ -1,13 +1,40 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="theme-color" content="#ffffff"/>
+    <meta name="author" content="Michael Akushsky"/>
+    <meta name="keywords"
+          content="рукописный текст, поиск, архив, OCR, еврейская история, нечёткий поиск, поиск по изображениям,поиск евреев"/>
+    <meta name="description"
+          content="Система поиска по архивным рукописным записям с поддержкой OCR и нечёткого совпадения."/>
+
+    <!-- Title -->
     <title>Внезапные евреи</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+    <!-- Open Graph (for social sharing previews) -->
+    <meta property="og:title" content="Архивный поиск по рукописям"/>
+    <meta property="og:description"
+          content="Поиск по архивным еврейским записям с поддержкой распознавания текста и нечёткого совпадения."/>
+    <meta property="og:image" content="/preview.png"/>
+    <meta property="og:url" content="https://jroots.co"/>
+    <meta property="og:type" content="website"/>
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image"/>
+    <meta name="twitter:title" content="Архивный поиск по рукописям"/>
+    <meta name="twitter:description"
+          content="Инструмент для поиска по рукописным архивным данным на русском и иврите с поддержкой OCR."/>
+    <meta name="twitter:image" content="/preview.png"/>
+
+    <!-- Фавикон -->
+    <link rel="icon" href="/favicon.ico" sizes="any"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
 </html>

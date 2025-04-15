@@ -263,7 +263,7 @@ export default function AdminDashboard() {
                                     />
                                 </div>
                                 <img
-                                    src={`http://localhost:8000${obj.thumbnail_url}`}
+                                    src={`${obj.thumbnail_url}`}
                                     alt="result"
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
                                     onClick={() => setPopupImage(obj.image_url)}
@@ -301,11 +301,11 @@ export default function AdminDashboard() {
                     }}
                 >
                     <div
-                        className={`max-w-full max-h-full overflow-${isZoomed ? 'auto' : 'hidden'}`}
+                        className={`max-w-full max-h-full ${isZoomed ? 'overflow-auto' : 'overflow-hidden'}`}
                         onClick={(e) => e.stopPropagation()} // prevent close on image click
                     >
                         <img
-                            src={`http://localhost:8000${popupImage}`}
+                            src={`${popupImage}`}
                             alt="Popup"
                             className={`transition-all duration-300 shadow-2xl rounded ${
                                 isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
