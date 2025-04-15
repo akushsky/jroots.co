@@ -36,7 +36,7 @@ export default function AdminDashboard() {
 
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
-    const pageSize = 1;
+    const pageSize = 20;
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [form, setForm] = useState<FormState>({

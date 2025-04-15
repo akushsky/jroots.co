@@ -29,7 +29,7 @@ export default function SearchPage() {
 
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
-    const pageSize = 1;
+    const pageSize = 20;
 
     useEffect(() => {
         setPage(0);
@@ -67,7 +67,7 @@ export default function SearchPage() {
     return (
         <div className="max-w-3xl mx-auto mt-10">
             <Input
-                placeholder="Search..."
+                placeholder="Поиск..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
             />
