@@ -12,6 +12,7 @@ import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import Highlighter from "react-highlight-words";
 import {getPaginationPages} from "@/api/paginate.ts";
+import { paths } from "@/types/api";
 
 interface ImageSource {
     id: number;
@@ -27,8 +28,12 @@ interface FormState {
     image_file_sha512?: string;
 }
 
+type SearchResponse = paths["/api/search"]["get"]["responses"]["200"];
+type SearchResponseBody = SearchResponse["content"]["application/json"];
+type SearchObject = SearchResponseBody["items"][number];
+
 export default function AdminDashboard() {
-    const [objects, setObjects] = useState([]);
+    const [objects, setObjects] = useState<SearchObject[]>([]);
     const [query, setQuery] = useState("");
     const [imageSources, setImageSources] = useState<ImageSource[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
@@ -38,6 +43,7 @@ export default function AdminDashboard() {
     const [total, setTotal] = useState(0);
     const pageSize = 20;
 
+    const [dragOver, setDragOver] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [form, setForm] = useState<FormState>({
         text_content: "",
@@ -49,6 +55,19 @@ export default function AdminDashboard() {
     });
 
     const fetchSources = () => apiClient.get("/admin/image-sources").then(res => setImageSources(res.data));
+
+    const fetchPage = async () => {
+        if (query.trim()) {
+            setPage(0);
+            const res = await searchObjects(query, page, pageSize);
+            setObjects([...res.items]);
+            setTotal(res.total);
+        } else {
+            const res = await fetchObjects(page, pageSize);
+            setObjects([...res.items]);
+            setTotal(res.total);
+        }
+    }
 
     useEffect(() => {
         fetchSources();
@@ -67,16 +86,7 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         const delay = setTimeout(async () => {
-            if (query.trim()) {
-                setPage(0);
-                const res = await searchObjects(query, page, pageSize);
-                setObjects(res.items);
-                setTotal(res.total);
-            } else {
-                const res = await fetchObjects(page, pageSize);
-                setObjects(res.items);
-                setTotal(res.total);
-            }
+            await fetchPage()
         }, 300);
 
         return () => clearTimeout(delay);
@@ -109,9 +119,10 @@ export default function AdminDashboard() {
         setEditingId(obj.id);
         setForm({
             text_content: obj.text_content,
-            image_path: obj.image_path,
+            image_path: obj.image?.image_path,
             image_key: obj.image?.image_key || "",
             image_source_id: obj.image?.source?.id || null,
+            image_file_sha512: obj.image?.sha512_hash || null,
             image_file: null,
         });
     };
@@ -120,6 +131,7 @@ export default function AdminDashboard() {
         const formData = new FormData();
         formData.append("text_content", form.text_content);
         formData.append("image_path", form.image_path);
+        formData.append("image_key", form.image_key);
         if (form.image_source_id)
             formData.append("image_source_id", form.image_source_id.toString());
         if (form.image_file)
@@ -128,11 +140,12 @@ export default function AdminDashboard() {
         await updateSearchObject(editingId!, formData);
 
         clearForm();
-        fetchObjects(page, pageSize);
+
+        await fetchPage();
     };
 
     const handleDelete = async (id: number) => {
-        if (confirm("Are you sure you want to delete this object?")) {
+        if (confirm("Вы точно хотите забыть об этом навсегда?")) {
             await deleteSearchObject(id);
             fetchObjects(page, pageSize);
         }
@@ -141,7 +154,7 @@ export default function AdminDashboard() {
     const handleCreate = async () => {
         console.log("Creating object with form data:", form);
         if ((!form.image_file && !form.image_file_sha512) || form.image_source_id === null) {
-            alert("Please select an image source and upload an image file.");
+            alert("Источник информации и скан-копия - обязательные для заполнения поля.");
             return;
         }
 
@@ -169,11 +182,11 @@ export default function AdminDashboard() {
             <h1 className="text-2xl">Admin Dashboard</h1>
 
             <div className="space-y-2">
-                <Input placeholder="Text content" value={form.text_content}
+                <Input placeholder="ФИО" value={form.text_content}
                        onChange={(e) => setForm({...form, text_content: e.target.value})}/>
-                <Input placeholder="Image path" value={form.image_path}
+                <Input placeholder="Шифр" value={form.image_path}
                        onChange={(e) => setForm({...form, image_path: e.target.value})}/>
-                <Input placeholder="Image key" value={form.image_key}
+                <Input placeholder="Описание" value={form.image_key}
                        onChange={(e) => setForm({...form, image_key: e.target.value})}/>
 
                 {/* Dropdown for image sources */}
@@ -187,26 +200,71 @@ export default function AdminDashboard() {
                         })
                     }
                 >
-                    <option value="">Select Image Source</option>
+                    <option value="">Источник информации</option>
                     {imageSources.map(src => (
                         <option key={src.id} value={src.id}>{src.source_name}</option>
                     ))}
                 </select>
 
-                <Input type="file" onChange={(e) => setForm({
-                    ...form,
-                    image_file: e.target.files?.[0] ?? null,
-                    image_file_sha512: ""
-                })}/>
+                <div
+                    className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 cursor-pointer
+                                ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300'}
+                               `}
+                    onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOver(true);
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOver(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) setForm({
+                            ...form,
+                            image_file: file ?? null,
+                            image_file_sha512: ""
+                        });
+                    }}
+                    onClick={() => document.getElementById('fileInput')?.click()}
+                >
+                    {form.image_file ? (
+                        <div className="text-sm text-gray-800">
+                            <img
+                                src={URL.createObjectURL(form.image_file)}
+                                alt="Preview"
+                                className="mt-2 max-h-48 mx-auto rounded shadow"
+                            />
+                            {form.image_file.name}
+                        </div>
+                    ) : (
+                        <div className="text-gray-500">Перетащите изображение сюда или нажмите, чтобы выбрать файл</div>
+                    )}
+                </div>
+
+                <Input
+                    id="fileInput"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setForm({
+                            ...form,
+                            image_file: file ?? null,
+                            image_file_sha512: ""
+                        })
+                    }}
+                />
+
                 <Input value={form.image_file_sha512} hidden={true}
                        onChange={(e) => setForm({...form, image_file_sha512: e.target.value})}
                        placeholder="Image file SHA-512"/>
-                <Button onClick={handleCreate}>Create Object</Button>
+                <Button onClick={handleCreate}>Запомнить</Button>
             </div>
 
             <Input
                 className="w-full"
-                placeholder="Search by content..."
+                placeholder="Поиск..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
             />
@@ -232,19 +290,64 @@ export default function AdminDashboard() {
                                         })
                                     }
                                 >
-                                    <option value="">Select Image Source</option>
+                                    <option value="">Источник информации</option>
                                     {imageSources.map((src: any) => (
                                         <option key={src.id} value={src.id}>{src.source_name}</option>
                                     ))}
                                 </select>
-                                <Input type="file"
-                                       onChange={(e) => setForm({
-                                           ...form,
-                                           image_file: e.target.files?.[0] ?? null,
-                                           image_file_sha512: ""
-                                       })}/>
-                                <Button onClick={handleUpdate}>Save Changes</Button>
-                                <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+
+                                <div
+                                    className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 cursor-pointer
+                                ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300'}
+                               `}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        setDragOver(true);
+                                    }}
+                                    onDragLeave={() => setDragOver(false)}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        setDragOver(false);
+                                        const file = e.dataTransfer.files?.[0];
+                                        if (file) setForm({
+                                            ...form,
+                                            image_file: file ?? null,
+                                            image_file_sha512: ""
+                                        });
+                                    }}
+                                    onClick={() => document.getElementById('fileInput')?.click()}
+                                >
+                                    {form.image_file ? (
+                                        <div className="text-sm text-gray-800">
+                                            <img
+                                                src={URL.createObjectURL(form.image_file)}
+                                                alt="Preview"
+                                                className="mt-2 max-h-48 mx-auto rounded shadow"
+                                            />
+                                            {form.image_file.name}
+                                        </div>
+                                    ) : (
+                                        <div className="text-gray-500">Перетащите изображение сюда или нажмите, чтобы выбрать файл</div>
+                                    )}
+                                </div>
+
+                                <Input
+                                    id="fileInput"
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) setForm({
+                                            ...form,
+                                            image_file: file ?? null,
+                                            image_file_sha512: ""
+                                        })
+                                    }}
+                                />
+
+                                <Button onClick={handleUpdate}>Запомнить</Button>
+                                <Button variant="ghost" onClick={() => setEditingId(null)}>Не менять</Button>
                             </div>
                         ) : (
                             <>
@@ -268,10 +371,12 @@ export default function AdminDashboard() {
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
                                     onClick={() => setPopupImage(obj.image_url)}
                                 />
-                                <Button size="sm" className="mr-2 mt-2" onClick={() => handleEdit(obj)}>Edit</Button>
-                                <Button size="sm" className="mr-2 mt-2" onClick={() => handleClone(obj)}>Clone</Button>
+                                <Button size="sm" className="mr-2 mt-2"
+                                        onClick={() => handleEdit(obj)}>Редактировать</Button>
+                                <Button size="sm" className="mr-2 mt-2"
+                                        onClick={() => handleClone(obj)}>Дублировать</Button>
                                 <Button variant="destructive" size="sm"
-                                        onClick={() => handleDelete(obj.id)}>Delete</Button>
+                                        onClick={() => handleDelete(obj.id)}>Забыть навсегда</Button>
                             </>
                         )}
                     </CardContent>

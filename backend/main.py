@@ -52,7 +52,7 @@ async def search(q: str,
                 func.similarity(models.SearchObject.text_content, q) > 0.3,
                 func.similarity(models.Image.image_key, q) > 0.3,
                 func.similarity(models.Image.image_path, q) > 0.3,
-                )
+            )
         )
     )
     total = await db.scalar(total_stmt)
@@ -171,6 +171,7 @@ async def update_object(
         object_id: int,
         text_content: str = Form(...),
         image_path: str = Form(...),
+        image_key: str = Form(...),
         image_source_id: int | None = Form(None),
         image_file: UploadFile | None = File(None),
         db: AsyncSession = Depends(database.get_db),
@@ -181,19 +182,21 @@ async def update_object(
         raise HTTPException(status_code=404, detail="Object not found")
 
     obj.text_content = text_content
-    obj.image_path = image_path
 
     if image_file:
         image_binary = await image_file.read()
-        image_source = await db.get(models.ImageSource, image_source_id) if image_source_id else None
-        image = await crud.save_unique_image(db, image_source.source_name if image_source else "default",
-                                             image_source_id, image_binary)
+        image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
         obj.image_id = image.id
 
     await db.commit()
 
     # Load relationships explicitly
     await db.refresh(obj, attribute_names=['image'])
+
+    # And eager-load the image’s source relationship too:
+    if obj.image:
+        await db.refresh(obj.image, attribute_names=['source'])
+
     return obj
 
 
