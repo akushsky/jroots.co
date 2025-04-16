@@ -179,7 +179,7 @@ export default function AdminDashboard() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
-            <h1 className="text-2xl">Admin Dashboard</h1>
+            <h1 className="text-2xl">Никто не забыт</h1>
 
             <div className="space-y-2">
                 <Input placeholder="ФИО" value={form.text_content}
