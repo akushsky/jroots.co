@@ -11,20 +11,21 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
+PASSWORD = os.getenv("PASSWORD")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login")
 
-fake_admin = {
+admin = {
     "username": "admin",
-    "hashed_password": pwd_context.hash("adminpassword")
+    "hashed_password": pwd_context.hash(PASSWORD)
 }
 
 def authenticate_user(username: str, password: str):
-    if username != fake_admin["username"]:
+    if username != admin["username"]:
         return False
-    if not pwd_context.verify(password, fake_admin["hashed_password"]):
+    if not pwd_context.verify(password, admin["hashed_password"]):
         return False
     return {"username": username}
 
@@ -43,7 +44,7 @@ async def get_current_admin(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username != fake_admin["username"]:
+        if username != admin["username"]:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
