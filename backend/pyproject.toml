@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "jroots-backend"
+version = "0.1.0"
+description = "Backend for Jewish OCR Search"
+authors = ["Michael Akushsky <michael.akushsky@gmail.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.110.0"
+uvicorn = { extras = ["standard"], version = "^0.27.0" }
+sqlalchemy = "^2.0.28"
+asyncpg = "^0.29.0"
+pydantic = "^2.5.3"
+pydantic-settings = "^2.2.1"
+python-multipart = "^0.0.9"
+Pillow = "^10.2.0"
+python-jose = { extras = ["cryptography"], version = "^3.3.0" }
+passlib = { extras = ["bcrypt"], version = "^1.7.4" }
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.2.0"
+pytest = "^8.1.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
