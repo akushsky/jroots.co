@@ -147,7 +147,7 @@ export default function AdminDashboard() {
     const handleDelete = async (id: number) => {
         if (confirm("Вы точно хотите забыть об этом навсегда?")) {
             await deleteSearchObject(id);
-            fetchObjects(page, pageSize);
+            await fetchPage();
         }
     };
 
@@ -171,7 +171,8 @@ export default function AdminDashboard() {
         await createSearchObject(formData);
 
         clearForm();
-        fetchObjects(page, pageSize);
+
+        await fetchPage();
     };
 
     const pageCount = Math.ceil(total / pageSize);
