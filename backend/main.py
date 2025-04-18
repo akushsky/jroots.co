@@ -241,30 +241,34 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
     original = ImageOps.exif_transpose(original).convert("RGBA")
 
     watermark = Image.new("RGBA", original.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(watermark)
 
-    # Explicit font load
-    font_size = max(original.width // 15, 30)
+    # Font setup
+    font_size = max(original.width // 15, 40)
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     try:
         font = ImageFont.truetype(font_path, font_size)
     except:
         font = ImageFont.load_default()
 
-    text = "jroots.co"
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
+    watermark_text = "jroots.co"
+    opacity = 90  # More visible watermark
 
-    # Repeated watermark across the image
-    spacing_x, spacing_y = text_width + 100, text_height + 100
-    opacity = 60  # semi-transparent watermark
+    # Create a single watermark image (rotated)
+    single_watermark = Image.new("RGBA", (font_size * len(watermark_text), font_size), (255, 255, 255, 0))
+    single_draw = ImageDraw.Draw(single_watermark)
+    single_draw.text((0, 0), watermark_text, font=font, fill=(255, 255, 255, opacity))
 
-    for x in range(0, original.width, spacing_x):
-        for y in range(0, original.height, spacing_y):
-            draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
+    # Rotate watermark
+    angle = 30  # degrees
+    rotated_watermark = single_watermark.rotate(angle, expand=True)
 
-    # Combine watermark with original image
+    # Tiled watermark placement
+    spacing_x, spacing_y = rotated_watermark.width + 100, rotated_watermark.height + 100
+    for x in range(-rotated_watermark.width, original.width + rotated_watermark.width, spacing_x):
+        for y in range(-rotated_watermark.height, original.height + rotated_watermark.height, spacing_y):
+            watermark.alpha_composite(rotated_watermark, (x, y))
+
+    # Combine watermark with the original image
     watermarked = Image.alpha_composite(original, watermark).convert("RGB")
 
     buffer = io.BytesIO()
