@@ -2,6 +2,7 @@ import io
 from os import getenv
 from typing import Optional
 
+from PIL import Image, ImageFont, ImageDraw, ImageOps
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -236,9 +237,42 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
-    return StreamingResponse(io.BytesIO(image.image_data), media_type="image/jpeg", headers=headers)
+    original = Image.open(io.BytesIO(image.image_data))
+    original = ImageOps.exif_transpose(original).convert("RGBA")
 
+    watermark = Image.new("RGBA", original.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(watermark)
+
+    # Explicit font load
+    font_size = max(original.width // 15, 30)
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except:
+        font = ImageFont.load_default()
+
+    text = "jroots.co"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    # Repeated watermark across the image
+    spacing_x, spacing_y = text_width + 100, text_height + 100
+    opacity = 60  # semi-transparent watermark
+
+    for x in range(0, original.width, spacing_x):
+        for y in range(0, original.height, spacing_y):
+            draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
+
+    # Combine watermark with original image
+    watermarked = Image.alpha_composite(original, watermark).convert("RGB")
+
+    buffer = io.BytesIO()
+    watermarked.save(buffer, format="JPEG")
+    buffer.seek(0)
+
+    headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
+    return StreamingResponse(buffer, media_type="image/jpeg", headers=headers)
 
 @app.get("/api/admin/image-sources", response_model=list[schemas.ImageSourceSchema])
 async def list_image_sources(db: AsyncSession = Depends(database.get_db)):
