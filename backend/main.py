@@ -109,31 +109,45 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": token, "token_type": "bearer"}
 
 
-@app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
-async def create_object(
-        text_content: str = Form(...),
+@app.post("/api/admin/images", response_model=schemas.ImageSchema)
+async def create_image(
         image_path: str = Form(...),
         image_key: str = Form(...),
         image_source_id: int | None = Form(None),
-        image_file: Optional[UploadFile] = File(None),
-        image_file_sha512: Optional[str] = Form(None),
+        image_file: UploadFile = File(...),
+        image_file_sha512: str = Form(...),
         db: AsyncSession = Depends(database.get_db),
         user=Depends(auth.get_current_admin)
 ):
     # Check if the image already exists
     existing_image = await db.execute(
-        select(models.Image).where(
+        select(models.Image).options(selectinload(models.Image.source)).where(
             models.Image.sha512_hash == image_file_sha512
         )
     )
     existing = existing_image.scalar_one_or_none()
     if existing:
         # If it exists, reuse the existing image
-        image = existing
-    else:
-        # If it doesn't exist, save the new image
-        image_binary = await image_file.read()
-        image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
+        return existing
+
+    # If it doesn't exist, save the new image
+    image_binary = await image_file.read()
+    image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
+    return image
+
+
+@app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
+async def create_object(
+        text_content: str = Form(...),
+        image_path: str = Form(None),
+        image_key: str = Form(None),
+        image_source_id: int | None = Form(None),
+        image_file: Optional[UploadFile] = File(None),
+        image_file_sha512: Optional[str] = Form(None),
+        db: AsyncSession = Depends(database.get_db),
+        user=Depends(auth.get_current_admin)
+):
+    image = await create_image(image_path, image_key, image_source_id, image_file, image_file_sha512, db, user)
 
     search_obj = await crud.create_search_object(db, text_content, image.id)
     return search_obj
@@ -250,7 +264,7 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
     except:
         font = ImageFont.load_default()
 
-    watermark_text = "jroots.co"
+    watermark_text = "JRoots.co"
     opacity = 90  # More visible watermark
 
     # Create a single watermark image (rotated)
@@ -277,6 +291,7 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
 
     headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
     return StreamingResponse(buffer, media_type="image/jpeg", headers=headers)
+
 
 @app.get("/api/admin/image-sources", response_model=list[schemas.ImageSourceSchema])
 async def list_image_sources(db: AsyncSession = Depends(database.get_db)):
