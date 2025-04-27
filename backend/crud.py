@@ -16,7 +16,8 @@ async def save_unique_image(db: AsyncSession,
                             image_binary: bytes):
     sha512_hash = hashlib.sha512(image_binary).hexdigest()
 
-    existing_image = await db.execute(select(Image).where(Image.sha512_hash == sha512_hash))
+    existing_image = await db.execute(
+        select(Image).options(selectinload(Image.source)).where(Image.sha512_hash == sha512_hash))
     existing = existing_image.scalar_one_or_none()
 
     if existing:
@@ -28,6 +29,7 @@ async def save_unique_image(db: AsyncSession,
 
     # Create thumbnail
     original_image.thumbnail((200, 200))  # 200px max size
+    original_image = original_image.convert('RGB')  # Convert to RGB if not already
     thumbnail_buffer = BytesIO()
     original_image.save(thumbnail_buffer, format="JPEG")
     thumbnail_binary = thumbnail_buffer.getvalue()
@@ -42,7 +44,12 @@ async def save_unique_image(db: AsyncSession,
     )
     db.add(new_image)
     await db.commit()
-    await db.refresh(new_image)
+
+    result = await db.execute(
+        select(Image).options(selectinload(Image.source)).where(Image.id == new_image.id)
+    )
+    new_image = result.scalar_one()
+
     return new_image
 
 
