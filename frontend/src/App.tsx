@@ -4,6 +4,9 @@ import AdminLogin from "./components/AdminLogin";
 import AdminDashboard from "./components/AdminDashboard";
 import {Heart, Mail, Info} from "lucide-react";
 import {useState} from "react";
+import RegisterForm from "@/components/RegisterForm.tsx";
+import VerifyPage from "@/components/VerifyPage.tsx";
+import LoginForm from "@/components/LoginForm.tsx";
 
 function App() {
     const isAuthenticated = () => !!localStorage.getItem("token");
@@ -14,6 +17,9 @@ function App() {
                 <Routes>
                     <Route path="/" element={<SearchPage/>}/>
                     <Route path="/admin/login" element={<AdminLogin/>}/>
+                    <Route path="/signup" element={<RegisterForm/>}/>
+                    <Route path="/verify" element={<VerifyPage/>}/>
+                    <Route path="/login" element={<LoginForm/>}/>
                     <Route
                         path="/admin/dashboard"
                         element={isAuthenticated() ? <AdminDashboard/> : <Navigate to="/admin/login"/>}
@@ -80,7 +86,7 @@ function AboutBlock() {
                     </div>
 
                     <div className="flex items-center gap-1 hover:text-white transition">
-                        <Mail className="w-4 h-4" />
+                        <Mail className="w-4 h-4"/>
                         <a
                             href="mailto:michael.akushsky@gmail.com"
                             className="hover:underline"

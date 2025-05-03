@@ -4,6 +4,19 @@ from sqlalchemy.orm import relationship, declarative_base
 Base = declarative_base()
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    email = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=False)
+
+    is_admin = Column(Boolean, default=False)
+    is_verified = Column(Boolean, default=False)
+    is_subscribed = Column(Boolean, default=False)
+
+
 class ImageSource(Base):
     __tablename__ = "image_sources"
 

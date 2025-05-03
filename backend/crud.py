@@ -1,6 +1,6 @@
 import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from PIL import Image as PILImage, ImageOps
@@ -71,13 +71,3 @@ async def create_search_object(db: AsyncSession, text_content: str, image_id: in
 
     return obj
 
-
-async def fuzzy_search_objects(db: AsyncSession, query: str):
-    stmt = (
-        select(SearchObject)
-        .where(func.similarity(SearchObject.text_content, query) > 0.3)
-        .order_by(func.similarity(SearchObject.text_content, query).desc())
-        .limit(20)
-    )
-    result = await db.execute(stmt)
-    return result.scalars().all()

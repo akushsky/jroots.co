@@ -49,3 +49,14 @@ CREATE TABLE images
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE users
+(
+    id              SERIAL PRIMARY KEY,
+    username        VARCHAR(150) UNIQUE NOT NULL,
+    email           VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255)        NOT NULL,
+    is_admin        BOOLEAN DEFAULT FALSE,
+    is_verified     BOOLEAN DEFAULT FALSE,
+    is_subscribed   BOOLEAN DEFAULT FALSE
+);
+
