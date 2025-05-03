@@ -101,7 +101,7 @@ export default function SearchPage() {
                 ) : (
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={() => navigate("/login")}>Вход</Button>
-                        <Button onClick={() => navigate("/register")}>Регистрация</Button>
+                        <Button onClick={() => navigate("/signup")}>Регистрация</Button>
                     </div>
                 )}
             </div>
