@@ -1,9 +1,12 @@
+import {useNavigate} from "react-router-dom";
+import {jwtDecode} from "jwt-decode"; // we’ll need to install this
 import {useState, useEffect} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import {searchObjects} from "../api/api";
 import Highlighter from "react-highlight-words";
 import {Button} from "@/components/ui/button.tsx";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
 import {getPaginationPages} from "@/api/paginate.ts";
 
 interface ImageSource {
@@ -22,6 +25,8 @@ interface SearchResult {
 }
 
 export default function SearchPage() {
+    const navigate = useNavigate();
+    const [user, setUser] = useState<{ email: string } | null>(null);
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
@@ -34,6 +39,18 @@ export default function SearchPage() {
     useEffect(() => {
         setPage(0);
     }, [query]);
+
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if (token) {
+            try {
+                const decoded: any = jwtDecode(token);
+                setUser({email: decoded.sub});
+            } catch {
+                setUser(null);
+            }
+        }
+    }, []);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -66,6 +83,29 @@ export default function SearchPage() {
 
     return (
         <div className="max-w-3xl mx-auto mt-10">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-xl font-semibold">Ревизия внезапных евреев</h1>
+                {user ? (
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        Вы вошли как: <span className="font-medium">{user.email}</span>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                localStorage.removeItem("token");
+                                setUser(null);
+                            }}
+                        >
+                            Выйти
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => navigate("/login")}>Вход</Button>
+                        <Button onClick={() => navigate("/register")}>Регистрация</Button>
+                    </div>
+                )}
+            </div>
+
             <Input
                 placeholder="Поиск..."
                 value={query}
@@ -92,12 +132,34 @@ export default function SearchPage() {
                                         />
                                     </p>
                                     <div className="text-sm text-muted-foreground">
+                                        {result.image?.image_path === "********" ? (
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span
+                                                            className="italic cursor-help underline decoration-dotted mr-1">
+                                                            Шифр дела скрыт
+                                                        </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        <p>Подпишитесь, чтобы получить доступ к шифру дела</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        ) : (
+                                            <Highlighter
+                                                searchWords={[query]}
+                                                autoEscape
+                                                textToHighlight={result.image.image_path + " "}
+                                            />
+                                        )}
                                         <Highlighter
                                             searchWords={[query]}
                                             autoEscape
-                                            textToHighlight={`${result.image?.image_path} (${result.image?.source?.source_name}) ${result.image?.image_key}`}
+                                            textToHighlight={`(${result.image?.source?.source_name}) ${result.image?.image_key}`}
                                         />
                                     </div>
+
                                 </div>
                             </CardContent>
                             {result.similarity_score !== undefined && (
@@ -109,6 +171,13 @@ export default function SearchPage() {
                         </div>
                     </Card>
                 ))}
+
+                {results.length === 0 && query.trim() && (
+                    <div className="text-center text-gray-500 py-6">
+                        Нет результатов по запросу «{query}»
+                    </div>
+                )}
+
                 <div className="flex justify-center gap-2 mt-4 flex-wrap">
                     {visiblePages.map((p, idx) =>
                         p === 'ellipsis' ? (

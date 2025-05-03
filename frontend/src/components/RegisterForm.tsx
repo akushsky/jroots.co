@@ -1,0 +1,91 @@
+import { useState, useRef } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
+import {userRegister} from "@/api/api.ts";
+
+export default function RegisterForm() {
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [username, setUsername] = useState("");
+    const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const captchaRef = useRef<any>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        setSuccessMessage(null);
+        setErrorMessage(null);
+
+        if (!captchaToken) {
+            setErrorMessage("Пожалуйста, подтвердите, что вы не робот");
+            return;
+        }
+
+        if (!email || !password || !username) {
+            setErrorMessage("Пожалуйста, заполните все поля");
+            return;
+        }
+
+        try {
+            const data = await userRegister(username, email, password, captchaToken);
+            setSuccessMessage(data.message || "Регистрация прошла успешно.");
+        } catch (err) {
+            setErrorMessage("Ошибка регистрации. Попробуйте ещё раз.");
+        }
+    };
+
+    return (
+        <div className="max-w-md mx-auto mt-16">
+            <Card>
+                <CardContent className="p-6 space-y-4">
+                    <h2 className="text-xl font-semibold text-center">Регистрация</h2>
+                    {successMessage && (
+                        <div className="bg-green-100 text-green-800 px-4 py-2 rounded text-sm">
+                            {successMessage}
+                        </div>
+                    )}
+                    {errorMessage && (
+                        <div className="bg-red-100 text-red-800 px-4 py-2 rounded text-sm">
+                            {errorMessage}
+                        </div>
+                    )}
+                    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                        <Input
+                            type="text"
+                            placeholder="Имя"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                        />
+                        <Input
+                            type="email"
+                            placeholder="Email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                        <Input
+                            type="password"
+                            placeholder="Пароль"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                        <HCaptcha
+                            sitekey="0a40b9c4-3a0a-4438-b590-05e697d46740"
+                            onVerify={(token) => setCaptchaToken(token)}
+                            ref={captchaRef}
+                        />
+                        <Button type="submit" className="w-full">
+                            Зарегистрироваться
+                        </Button>
+                    </form>
+                </CardContent>
+            </Card>
+        </div>
+    );
+}

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
 
@@ -44,9 +44,28 @@ class AdminEventSchema(BaseModel):
     class Config:
         from_attributes = True
 
+
 class PaginatedResults(BaseModel):
     items: list[SearchObjectSchema]
     total: int
+
+    class Config:
+        from_attributes = True
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    captcha_token: str
+
+    class Config:
+        from_attributes = True
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
     class Config:
         from_attributes = True

@@ -3,7 +3,7 @@ from os import getenv
 from typing import Optional
 
 from PIL import Image, ImageFont, ImageDraw, ImageOps
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, func, or_, text
@@ -12,14 +12,13 @@ from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
 import auth
-import crud
-import database
-import models
-import schemas
+import database, models, crud, schemas
+from resend_service import send_email
 
 app = FastAPI()
 
 origins = getenv("CORS_ORIGINS", "*").split(",")
+FRONTEND_URL = getenv("FRONTEND_URL", "http://localhost:5173")
 
 # noinspection PyTypeChecker
 app.add_middleware(
@@ -38,62 +37,54 @@ async def startup():
 
 
 @app.get("/api/search", response_model=schemas.PaginatedResults)
-async def search(q: str,
-                 skip: int = 0,
-                 limit: int = 20,
-                 db: AsyncSession = Depends(database.get_db)
-                 ):
+async def search(q: str, skip: int = 0, limit: int = 20,
+                 db: AsyncSession = Depends(database.get_db),
+                 current_user: Optional[models.User] = Depends(auth.get_current_user_optional)):
     like_query = f"%{q}%"
 
-    total_stmt = (
-        select(func.count(models.SearchObject.id))
-        .join(models.Image, models.SearchObject.image_id == models.Image.id)
-        .where(
-            or_(
-                models.SearchObject.text_content.ilike(like_query),
-                models.Image.image_key.ilike(like_query),
-                models.Image.image_path.ilike(like_query),
-                func.similarity(models.SearchObject.text_content, q) > 0.3,
-                func.similarity(models.Image.image_key, q) > 0.3,
-                func.similarity(models.Image.image_path, q) > 0.3,
-            )
-        )
+    similarity_conditions = [
+        func.similarity(models.SearchObject.text_content, q) > 0.3,
+        func.similarity(models.Image.image_key, q) > 0.3,
+        func.similarity(models.Image.image_path, q) > 0.3,
+    ]
+
+    filter_conditions = or_(
+        models.SearchObject.text_content.ilike(like_query),
+        models.Image.image_key.ilike(like_query),
+        models.Image.image_path.ilike(like_query),
+        *similarity_conditions
     )
-    total = await db.scalar(total_stmt)
+
+    total = await db.scalar(
+        select(func.count(models.SearchObject.id))
+        .join(models.Image)
+        .where(filter_conditions)
+    )
 
     results = await db.execute(
         select(models.SearchObject,
-               func.greatest(
-                   func.similarity(models.SearchObject.text_content, q),
-                   func.similarity(models.Image.image_key, q),
-                   func.similarity(models.Image.image_path, q),
-               ).label("relevance")
-               )
-        .join(models.Image, models.SearchObject.image_id == models.Image.id)
+               func.greatest(*[func.similarity(models.SearchObject.text_content, q),
+                               func.similarity(models.Image.image_key, q),
+                               func.similarity(models.Image.image_path, q)])
+               .label("relevance"))
+        .join(models.Image)
         .options(selectinload(models.SearchObject.image).selectinload(models.Image.source))
-        .where(
-            or_(
-                models.SearchObject.text_content.ilike(like_query),
-                models.Image.image_key.ilike(like_query),
-                models.Image.image_path.ilike(like_query),
-                func.similarity(models.SearchObject.text_content, q) > 0.3,
-                func.similarity(models.Image.image_key, q) > 0.3,
-                func.similarity(models.Image.image_path, q) > 0.3,
-            )
-        )
+        .where(filter_conditions)
         .order_by(text("relevance DESC"))
         .offset(skip)
         .limit(limit)
     )
 
     search_objects = results.all()
-
     objects_with_urls = []
+
     for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
         if obj.image:
             obj_data.image_url = f"/api/images/{obj.image.id}"
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+            if not current_user or not current_user.is_subscribed:
+                obj_data.image.image_path = "********"
         obj_data.similarity_score = round(score * 100)
         objects_with_urls.append(obj_data)
 
@@ -102,7 +93,7 @@ async def search(q: str,
 
 @app.post("/api/admin/login")
 async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = auth.authenticate_user(form_data.username, form_data.password)
+    user = auth.authenticate_admin(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
     token = auth.create_access_token({"sub": user["username"]})
@@ -110,70 +101,49 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app.post("/api/admin/images", response_model=schemas.ImageSchema)
-async def create_image(
-        image_path: str = Form(...),
-        image_key: str = Form(...),
-        image_source_id: int | None = Form(None),
-        image_file: UploadFile = File(...),
-        image_file_sha512: str = Form(...),
-        db: AsyncSession = Depends(database.get_db),
-        user=Depends(auth.get_current_admin)
-):
-    # Check if the image already exists
-    existing_image = await db.execute(
-        select(models.Image).options(selectinload(models.Image.source)).where(
-            models.Image.sha512_hash == image_file_sha512
-        )
+async def create_image(image_path: str = Form(...), image_key: str = Form(...),
+                       image_source_id: Optional[int] = Form(None), image_file: UploadFile = File(...),
+                       image_file_sha512: str = Form(...),
+                       db: AsyncSession = Depends(database.get_db),
+                       user=Depends(auth.get_current_admin)):
+    existing = await db.scalar(
+        select(models.Image).options(selectinload(models.Image.source))
+        .where(models.Image.sha512_hash == image_file_sha512)
     )
-    existing = existing_image.scalar_one_or_none()
     if existing:
-        # If it exists, reuse the existing image
         return existing
 
-    # If it doesn't exist, save the new image
     image_binary = await image_file.read()
-    image = await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
-    return image
+    return await crud.save_unique_image(db, image_path, image_key, image_source_id, image_binary)
 
 
 @app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
-async def create_object(
-        text_content: str = Form(...),
-        image_path: str = Form(None),
-        image_key: str = Form(None),
-        image_source_id: int | None = Form(None),
-        image_file: Optional[UploadFile] = File(None),
-        image_file_sha512: Optional[str] = Form(None),
-        db: AsyncSession = Depends(database.get_db),
-        user=Depends(auth.get_current_admin)
-):
+async def create_object(text_content: str = Form(...), image_path: str = Form(...),
+                        image_key: str = Form(...), image_source_id: Optional[int] = Form(None),
+                        image_file: Optional[UploadFile] = File(None),
+                        image_file_sha512: Optional[str] = Form(None),
+                        db: AsyncSession = Depends(database.get_db),
+                        user=Depends(auth.get_current_admin)):
     image = await create_image(image_path, image_key, image_source_id, image_file, image_file_sha512, db, user)
-
-    search_obj = await crud.create_search_object(db, text_content, image.id)
-    return search_obj
+    return await crud.create_search_object(db, text_content, image.id)
 
 
 @app.get("/api/admin/objects", response_model=schemas.PaginatedResults)
-async def list_objects(
-        skip: int = 0,
-        limit: int = 20,
-        db: AsyncSession = Depends(database.get_db),
-        user=Depends(auth.get_current_admin)
-):
-    total_stmt = select(func.count()).select_from(models.SearchObject)
-    total = await db.scalar(total_stmt)
+async def list_objects(skip: int = 0, limit: int = 20,
+                       db: AsyncSession = Depends(database.get_db),
+                       user=Depends(auth.get_current_admin)):
+    total = await db.scalar(select(func.count()).select_from(models.SearchObject))
 
     result = await db.execute(
         select(models.SearchObject)
         .options(selectinload(models.SearchObject.image).selectinload(models.Image.source))
-        .offset(skip)
-        .limit(limit)
+        .offset(skip).limit(limit)
         .order_by(models.SearchObject.created_at.desc())
     )
-    objects = result.scalars().all()
 
-    # Dynamically add image URLs
+    objects = result.scalars().all()
     objects_with_urls = []
+
     for obj in objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj)
         if obj.image:
@@ -265,7 +235,7 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
         font = ImageFont.load_default()
 
     watermark_text = "JRoots.co"
-    opacity = 90  # More visible watermark
+    opacity = 75  # More visible watermark
 
     # Create a single watermark image (rotated)
     single_watermark = Image.new("RGBA", (font_size * len(watermark_text), font_size), (255, 255, 255, 0))
@@ -307,3 +277,77 @@ async def get_thumbnail(image_id: int, db: AsyncSession = Depends(database.get_d
 
     headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
     return StreamingResponse(io.BytesIO(image.thumbnail_data), media_type="image/jpeg", headers=headers)
+
+
+@app.post("/api/register")
+async def register_user(
+        data: schemas.RegisterRequest,
+        db: AsyncSession = Depends(database.get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks()):
+    # Check if user already exists
+    existing_user = await db.execute(select(models.User).where(models.User.email == data.email))
+    if existing_user.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    verification_token = auth.generate_verification_token(str(data.email))
+    verification_url = f"{FRONTEND_URL}/verify?token={verification_token}"
+
+    hashed_pw = auth.hash_password(data.password)
+    user = models.User(
+        username=data.username,
+        email=data.email,
+        hashed_password=hashed_pw,
+        is_verified=False
+    )
+
+    db.add(user)
+    await db.commit()
+
+    html = f"""
+    <h1>Подтвердите регистрацию</h1>
+    <p>Здравствуйте, {data.username}!</p>
+    <p>Пожалуйста, подтвердите ваш email, перейдя по ссылке ниже:</p>
+    <a href="{verification_url}">Подтвердить Email</a>
+    """
+    background_tasks.add_task(send_email,
+                              to_email=str(data.email),
+                              subject="Подтверждение регистрации",
+                              html_content=html
+                              )
+
+    return {"message": "Регистрация прошла успешно. Пожалуйста, проверьте вашу почту для подтверждения."}
+
+
+@app.get("/api/verify")
+async def verify_user(token: str, db: AsyncSession = Depends(database.get_db)):
+    email = auth.verify_token(token)
+
+    result = await db.execute(select(models.User).where(models.User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_verified = True
+    await db.commit()
+
+    return {"message": "User verified successfully"}
+
+
+@app.post("/api/login")
+async def login_user(
+        form_data: OAuth2PasswordRequestForm = Depends(),
+        db: AsyncSession = Depends(database.get_db)
+):
+    result = await db.execute(select(models.User).where(models.User.email == form_data.username))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=400, detail="Неверный email или пароль")
+
+    if not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Неверный email или пароль")
+
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="Email не подтвержден")
+
+    access_token = auth.create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}

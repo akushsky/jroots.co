@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest-backend
+        name: Run backend tests with pytest
+        entry: ./run-tests.sh
+        language: system
+        types: [python]
+        pass_filenames: false
