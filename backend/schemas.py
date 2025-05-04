@@ -25,6 +25,7 @@ class ImageSchema(BaseModel):
 class SearchObjectSchema(BaseModel):
     id: int
     text_content: str
+    price: int | None
     image: ImageSchema | None
     image_url: str | None = None  # Dynamic URL
     thumbnail_url: str | None = None

@@ -85,6 +85,7 @@ async def search(q: str, skip: int = 0, limit: int = 20,
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
             if not current_user or not current_user.is_subscribed:
                 obj_data.image.image_path = "********"
+        obj_data.price = obj.price
         obj_data.similarity_score = round(score * 100)
         objects_with_urls.append(obj_data)
 
@@ -118,14 +119,15 @@ async def create_image(image_path: str = Form(...), image_key: str = Form(...),
 
 
 @app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
-async def create_object(text_content: str = Form(...), image_path: str = Form(...),
+async def create_object(text_content: str = Form(...),
+                        price: int = Form(...), image_path: str = Form(...),
                         image_key: str = Form(...), image_source_id: Optional[int] = Form(None),
                         image_file: Optional[UploadFile] = File(None),
                         image_file_sha512: Optional[str] = Form(None),
                         db: AsyncSession = Depends(database.get_db),
                         user=Depends(auth.get_current_admin)):
     image = await create_image(image_path, image_key, image_source_id, image_file, image_file_sha512, db, user)
-    return await crud.create_search_object(db, text_content, image.id)
+    return await crud.create_search_object(db, text_content, price, image.id)
 
 
 @app.get("/api/admin/objects", response_model=schemas.PaginatedResults)
@@ -235,7 +237,7 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
         font = ImageFont.load_default()
 
     watermark_text = "JRoots.co"
-    opacity = 75  # More visible watermark
+    opacity = 200  # More visible watermark
 
     # Create a single watermark image (rotated)
     single_watermark = Image.new("RGBA", (font_size * len(watermark_text), font_size), (255, 255, 255, 0))

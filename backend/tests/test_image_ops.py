@@ -72,7 +72,7 @@ async def test_create_search_object_success():
     result_mock.scalar_one.return_value = "search_obj"
     db.execute.return_value = result_mock
 
-    result = await crud.create_search_object(db, "some text", image_id=42)
+    result = await crud.create_search_object(db, "some text", 300, image_id=42)
 
     assert result == "search_obj"
     db.add.assert_called_once()

@@ -17,6 +17,7 @@ interface ImageSource {
 interface SearchResult {
     id: number;
     text_content: string;
+    price: number;
     image_url: string;
     thumbnail_url: string;
     image_path: string;
@@ -162,11 +163,20 @@ export default function SearchPage() {
 
                                 </div>
                             </CardContent>
-                            {result.similarity_score !== undefined && (
-                                <div
-                                    className="absolute top-2 right-2 bg-green-600 text-white text-xs px-2 py-1 rounded-full shadow">
-                                    {result.similarity_score}%
-                                </div>
+                            {result.price !== undefined && (
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <div
+                                                className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-3 py-1 rounded-full shadow cursor-help">
+                                                {(result.price / 100).toFixed(2)} €
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Цена за доступ к полному изображению и шифру дела</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             )}
                         </div>
                     </Card>

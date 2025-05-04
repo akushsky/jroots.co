@@ -12,7 +12,8 @@ import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import Highlighter from "react-highlight-words";
 import {getPaginationPages} from "@/api/paginate.ts";
-import { paths } from "@/types/api";
+import {paths} from "@/types/api";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
 
 interface ImageSource {
     id: number;
@@ -21,6 +22,7 @@ interface ImageSource {
 
 interface FormState {
     text_content: string;
+    price: number | null;
     image_path: string;
     image_key: string;
     image_source_id: number | null;
@@ -47,6 +49,7 @@ export default function AdminDashboard() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [form, setForm] = useState<FormState>({
         text_content: "",
+        price: 0,
         image_path: "",
         image_key: "",
         image_source_id: null,
@@ -95,6 +98,7 @@ export default function AdminDashboard() {
     const clearForm = () => {
         setForm({
             text_content: "",
+            price: 0,
             image_path: "",
             image_key: "",
             image_source_id: null,
@@ -107,6 +111,7 @@ export default function AdminDashboard() {
     const handleClone = (obj: any) => {
         setForm({
             text_content: obj.text_content,
+            price: obj.price,
             image_path: obj.image?.image_path || "",
             image_key: obj.image?.image_key || "",
             image_source_id: obj.image?.source?.id || null,
@@ -119,6 +124,7 @@ export default function AdminDashboard() {
         setEditingId(obj.id);
         setForm({
             text_content: obj.text_content,
+            price: obj.price,
             image_path: obj.image?.image_path,
             image_key: obj.image?.image_key || "",
             image_source_id: obj.image?.source?.id || null,
@@ -130,6 +136,7 @@ export default function AdminDashboard() {
     const handleUpdate = async () => {
         const formData = new FormData();
         formData.append("text_content", form.text_content);
+        formData.append("price", form.price?.toString() || "");
         formData.append("image_path", form.image_path);
         formData.append("image_key", form.image_key);
         if (form.image_source_id)
@@ -160,6 +167,7 @@ export default function AdminDashboard() {
 
         const formData = new FormData();
         formData.append("text_content", form.text_content);
+        formData.append("price", form.price?.toString() || "");
         formData.append("image_path", form.image_path);
         formData.append("image_key", form.image_key);
         formData.append("image_source_id", form.image_source_id!.toString());
@@ -185,6 +193,8 @@ export default function AdminDashboard() {
             <div className="space-y-2">
                 <Input placeholder="ФИО" value={form.text_content}
                        onChange={(e) => setForm({...form, text_content: e.target.value})}/>
+                <Input placeholder="Стоимость" value={form.price?.toString()}
+                       onChange={(e) => setForm({...form, price: parseInt(e.target.value)})}/>
                 <Input placeholder="Шифр" value={form.image_path}
                        onChange={(e) => setForm({...form, image_path: e.target.value})}/>
                 <Input placeholder="Описание" value={form.image_key}
@@ -272,115 +282,135 @@ export default function AdminDashboard() {
 
             {objects.map((obj: any) => (
                 <Card key={obj.id} className="mb-4">
-                    <CardContent className="p-4">
-                        {editingId === obj.id ? (
-                            <div className="space-y-2">
-                                <Input value={form.text_content}
-                                       onChange={(e) => setForm({...form, text_content: e.target.value})}/>
-                                <Input value={form.image_path}
-                                       onChange={(e) => setForm({...form, image_path: e.target.value})}/>
-                                <Input value={form.image_key}
-                                       onChange={(e) => setForm({...form, image_key: e.target.value})}/>
-                                <select
-                                    className="w-full p-2 border rounded"
-                                    value={form.image_source_id !== null ? form.image_source_id : ""}
-                                    onChange={(e) =>
-                                        setForm({
-                                            ...form,
-                                            image_source_id: e.target.value ? parseInt(e.target.value) : null,
-                                        })
-                                    }
-                                >
-                                    <option value="">Источник информации</option>
-                                    {imageSources.map((src: any) => (
-                                        <option key={src.id} value={src.id}>{src.source_name}</option>
-                                    ))}
-                                </select>
+                    <div className="relative">
+                        <CardContent className="p-4">
+                            {editingId === obj.id ? (
+                                <div className="space-y-2">
+                                    <Input value={form.text_content}
+                                           onChange={(e) => setForm({...form, text_content: e.target.value})}/>
+                                    <Input value={form.price?.toString()}
+                                           onChange={(e) => setForm({...form, price: parseInt(e.target.value)})}/>
+                                    <Input value={form.image_path}
+                                           onChange={(e) => setForm({...form, image_path: e.target.value})}/>
+                                    <Input value={form.image_key}
+                                           onChange={(e) => setForm({...form, image_key: e.target.value})}/>
+                                    <select
+                                        className="w-full p-2 border rounded"
+                                        value={form.image_source_id !== null ? form.image_source_id : ""}
+                                        onChange={(e) =>
+                                            setForm({
+                                                ...form,
+                                                image_source_id: e.target.value ? parseInt(e.target.value) : null,
+                                            })
+                                        }
+                                    >
+                                        <option value="">Источник информации</option>
+                                        {imageSources.map((src: any) => (
+                                            <option key={src.id} value={src.id}>{src.source_name}</option>
+                                        ))}
+                                    </select>
 
-                                <div
-                                    className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 cursor-pointer
+                                    <div
+                                        className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 cursor-pointer
                                 ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300'}
                                `}
-                                    onDragOver={(e) => {
-                                        e.preventDefault();
-                                        setDragOver(true);
-                                    }}
-                                    onDragLeave={() => setDragOver(false)}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        setDragOver(false);
-                                        const file = e.dataTransfer.files?.[0];
-                                        if (file) setForm({
-                                            ...form,
-                                            image_file: file ?? null,
-                                            image_file_sha512: ""
-                                        });
-                                    }}
-                                    onClick={() => document.getElementById('fileInput')?.click()}
-                                >
-                                    {form.image_file ? (
-                                        <div className="text-sm text-gray-800">
-                                            <img
-                                                src={URL.createObjectURL(form.image_file)}
-                                                alt="Preview"
-                                                className="mt-2 max-h-48 mx-auto rounded shadow"
-                                            />
-                                            {form.image_file.name}
+                                        onDragOver={(e) => {
+                                            e.preventDefault();
+                                            setDragOver(true);
+                                        }}
+                                        onDragLeave={() => setDragOver(false)}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            setDragOver(false);
+                                            const file = e.dataTransfer.files?.[0];
+                                            if (file) setForm({
+                                                ...form,
+                                                image_file: file ?? null,
+                                                image_file_sha512: ""
+                                            });
+                                        }}
+                                        onClick={() => document.getElementById('fileInput')?.click()}
+                                    >
+                                        {form.image_file ? (
+                                            <div className="text-sm text-gray-800">
+                                                <img
+                                                    src={URL.createObjectURL(form.image_file)}
+                                                    alt="Preview"
+                                                    className="mt-2 max-h-48 mx-auto rounded shadow"
+                                                />
+                                                {form.image_file.name}
+                                            </div>
+                                        ) : (
+                                            <div className="text-gray-500">Перетащите изображение сюда или нажмите,
+                                                чтобы выбрать файл</div>
+                                        )}
+                                    </div>
+
+                                    <Input
+                                        id="fileInput"
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) setForm({
+                                                ...form,
+                                                image_file: file ?? null,
+                                                image_file_sha512: ""
+                                            })
+                                        }}
+                                    />
+
+                                    <Button onClick={handleUpdate}>Запомнить</Button>
+                                    <Button variant="ghost" onClick={() => setEditingId(null)}>Не менять</Button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="font-bold">
+                                        <Highlighter
+                                            searchWords={[query]}
+                                            autoEscape
+                                            textToHighlight={obj.text_content}
+                                        />
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                        <Highlighter
+                                            searchWords={[query]}
+                                            autoEscape
+                                            textToHighlight={`${obj.image?.image_path} (${obj.image?.source?.source_name}) ${obj.image?.image_key}`}
+                                        />
+                                    </div>
+                                    <img
+                                        src={`${obj.thumbnail_url}`}
+                                        alt="result"
+                                        className="w-20 h-20 object-cover rounded cursor-pointer"
+                                        onClick={() => setPopupImage(obj.image_url)}
+                                    />
+                                    <Button size="sm" className="mr-2 mt-2"
+                                            onClick={() => handleEdit(obj)}>Редактировать</Button>
+                                    <Button size="sm" className="mr-2 mt-2"
+                                            onClick={() => handleClone(obj)}>Дублировать</Button>
+                                    <Button variant="destructive" size="sm"
+                                            onClick={() => handleDelete(obj.id)}>Забыть навсегда</Button>
+                                </>
+                            )}
+                        </CardContent>
+                        {obj.price !== undefined && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div
+                                            className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-3 py-1 rounded-full shadow cursor-help">
+                                            {(obj.price / 100).toFixed(2)} €
                                         </div>
-                                    ) : (
-                                        <div className="text-gray-500">Перетащите изображение сюда или нажмите, чтобы выбрать файл</div>
-                                    )}
-                                </div>
-
-                                <Input
-                                    id="fileInput"
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) setForm({
-                                            ...form,
-                                            image_file: file ?? null,
-                                            image_file_sha512: ""
-                                        })
-                                    }}
-                                />
-
-                                <Button onClick={handleUpdate}>Запомнить</Button>
-                                <Button variant="ghost" onClick={() => setEditingId(null)}>Не менять</Button>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="font-bold">
-                                    <Highlighter
-                                        searchWords={[query]}
-                                        autoEscape
-                                        textToHighlight={obj.text_content}
-                                    />
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    <Highlighter
-                                        searchWords={[query]}
-                                        autoEscape
-                                        textToHighlight={`${obj.image?.image_path} (${obj.image?.source?.source_name}) ${obj.image?.image_key}`}
-                                    />
-                                </div>
-                                <img
-                                    src={`${obj.thumbnail_url}`}
-                                    alt="result"
-                                    className="w-20 h-20 object-cover rounded cursor-pointer"
-                                    onClick={() => setPopupImage(obj.image_url)}
-                                />
-                                <Button size="sm" className="mr-2 mt-2"
-                                        onClick={() => handleEdit(obj)}>Редактировать</Button>
-                                <Button size="sm" className="mr-2 mt-2"
-                                        onClick={() => handleClone(obj)}>Дублировать</Button>
-                                <Button variant="destructive" size="sm"
-                                        onClick={() => handleDelete(obj.id)}>Забыть навсегда</Button>
-                            </>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Цена за просмотр полного изображения и метаданных</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         )}
-                    </CardContent>
+                    </div>
                 </Card>
             ))}
             <div className="flex justify-center gap-2 mt-4 flex-wrap">
