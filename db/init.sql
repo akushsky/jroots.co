@@ -16,6 +16,7 @@ CREATE TABLE search_objects
     id           SERIAL PRIMARY KEY,
     text_content TEXT NOT NULL,
     image_id     INT  REFERENCES images (id) ON DELETE SET NULL,
+    price        INT NOT NULL DEFAULT 300,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

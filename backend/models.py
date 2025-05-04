@@ -45,6 +45,7 @@ class SearchObject(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     text_content = Column(Text, nullable=False)
+    price = Column(Integer, nullable=False)
     image_id = Column(Integer, ForeignKey("images.id", ondelete="SET NULL"))
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
