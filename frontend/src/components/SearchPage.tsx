@@ -212,6 +212,18 @@ export default function SearchPage() {
                         setIsZoomed(false);
                     }}
                 >
+                    {/* Close button */}
+                    <button
+                        className="absolute top-4 right-4 text-white text-3xl font-bold z-50 bg-black/50 rounded-full w-10 h-10 flex items-center justify-center"
+                        onClick={(e) => {
+                            e.stopPropagation(); // prevent outer click handler
+                            setPopupImage(null);
+                            setIsZoomed(false);
+                        }}
+                        aria-label="Закрыть изображение"
+                    >
+                        ×
+                    </button>
                     <div
                         className={`max-w-full max-h-full ${isZoomed ? 'overflow-auto' : 'overflow-hidden'}`}
                         onClick={(e) => e.stopPropagation()} // prevent close on image click
