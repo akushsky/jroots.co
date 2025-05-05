@@ -12,8 +12,21 @@ from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
 import auth
-import database, models, crud, schemas
+import crud
+import database
+import models
+import schemas
+from logging_config import setup_logging, construct_logger
+from logging_middleware import LoggingMiddleware
 from resend_service import send_email
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+
+setup_logging()
+logger = construct_logger("jroots")
 
 app = FastAPI()
 
@@ -28,6 +41,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# noinspection PyTypeChecker
+app.add_middleware(LoggingMiddleware)
 
 
 @app.on_event("startup")
@@ -77,6 +93,9 @@ async def search(q: str, skip: int = 0, limit: int = 20,
 
     search_objects = results.all()
     objects_with_urls = []
+
+    logger.info("Found %d objects for query '%s' and user '%s'", len(search_objects), q,
+                current_user.email if current_user else "Anonymous")
 
     for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)

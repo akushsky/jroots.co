@@ -4,6 +4,7 @@ from datetime import timedelta
 from jose import jwt
 from fastapi import HTTPException
 from backend import auth
+from backend.models import User
 
 # Mock secrets
 SECRET_KEY = "testsecret"
@@ -64,22 +65,26 @@ def test_verify_hcaptcha_failure(mock_post):
     assert auth.verify_hcaptcha("invalid-token") is False
 
 
-@patch("backend.auth.SECRET_KEY", SECRET_KEY)
-@patch("backend.auth.ALGORITHM", ALGORITHM)
-async def test_get_current_user_optional_found():
-    user_mock = MagicMock()
+@pytest.mark.asyncio
+@patch("backend.auth.jwt.decode")
+async def test_get_current_user_optional_found(jwt_decode_mock):
+    user_mock = MagicMock(spec=User)
+    db_mock = AsyncMock()
 
-    # Mock result of db.execute()h
+    # jwt.decode will return a payload with email
+    jwt_decode_mock.return_value = {"sub": "test@example.com"}
+
+    # db.execute() should return mock result with scalar_one_or_none()
     execute_result_mock = MagicMock()
     execute_result_mock.scalar_one_or_none.return_value = user_mock
+    db_mock.execute.return_value = execute_result_mock
 
-    db_mock = AsyncMock()
-    db_mock.execute.return_value = execute_result_mock  # <-- await db.execute() will return this
-
-    token = jwt.encode({"sub": "test@example.com"}, SECRET_KEY, algorithm=ALGORITHM)
+    token = "fake.jwt.token"
 
     user = await auth.get_current_user_optional(token=token, db=db_mock)
     assert user is user_mock
+    jwt_decode_mock.assert_called_once_with(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+    db_mock.execute.assert_called_once()
 
 
 @patch("backend.auth.SECRET_KEY", SECRET_KEY)

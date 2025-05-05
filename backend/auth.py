@@ -3,22 +3,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
-from dotenv import load_dotenv
 from fastapi import HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import database
+from config import PASSWORD, SECRET_KEY, ALGORITHM
+from crud import resolve_user_from_token
 from models import User
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
-PASSWORD = os.getenv("PASSWORD")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 HCAPTCHA_SECRET_KEY = os.getenv("HCAPTCHA_SECRET_KEY", "dev_key")
@@ -92,19 +87,7 @@ async def get_current_user_optional(
         token: Optional[str] = Depends(user_oauth2_scheme),
         db: AsyncSession = Depends(database.get_db)
 ) -> Optional[User]:
-    if token is None:
-        return None
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            return None
-    except JWTError:
-        return None
-
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()  # returns User object or None if not found
+    return await resolve_user_from_token(token, db)
 
 
 def verify_password(plain, hashed):
