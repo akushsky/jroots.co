@@ -1,4 +1,7 @@
 import hashlib
+from typing import Optional
+
+from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -6,7 +9,8 @@ from sqlalchemy.orm import selectinload
 from PIL import Image as PILImage, ImageOps
 from io import BytesIO
 
-from models import Image, SearchObject
+from config import SECRET_KEY, ALGORITHM
+from models import Image, SearchObject, User
 
 
 async def save_unique_image(db: AsyncSession,
@@ -72,3 +76,16 @@ async def create_search_object(db: AsyncSession, text_content: str, price: int, 
 
     return obj
 
+
+async def resolve_user_from_token(token: Optional[str], db: AsyncSession) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            return None
+        result = await db.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
+    except JWTError:
+        return None
