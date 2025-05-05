@@ -55,11 +55,11 @@ def generate_logging_config():
 
     # Try Loki handler if available
     try:
-        from loki_logger import LokiHandler
+        import logging_loki
 
         handlers.clear()  # Clear existing handlers to avoid conflicts
         handlers["loki"] = {
-            "class": "loki_logger.LokiHandler",
+            "class": "logging_loki.LokiHandler",
             "level": "INFO",
             "formatter": "json" if "json" in formatters else "colored",
             "url": "http://loki:3100/loki/api/v1/push",
@@ -82,12 +82,12 @@ def generate_logging_config():
         "handlers": handlers,
         "loggers": {
             "uvicorn": {
-                "handlers": ["console"],
+                "handlers": list(handlers.keys()),
                 "level": "WARNING",
                 "propagate": False,
             },
             "uvicorn.error": {
-                "handlers": ["console"],
+                "handlers": list(handlers.keys()),
                 "level": "WARNING",
                 "propagate": False,
             },
@@ -97,7 +97,7 @@ def generate_logging_config():
                 "propagate": False,
             },
             "fastapi": {
-                "handlers": ["console"],
+                "handlers": list(handlers.keys()),
                 "level": "INFO",
                 "propagate": True,
             },
