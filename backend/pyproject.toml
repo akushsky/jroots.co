@@ -20,7 +20,7 @@ passlib = { extras = ["bcrypt"], version = "^1.7.4" }
 httpx = "^0.25.0"
 tenacity = "^8.2.2"
 certifi = "^2024.9.14"
-python-logging-loki = "^0.1.2"
+loki-logger-handler = "^1.1.1"
 python-json-logger = "^2.0.4"
 colorlog = "^6.7.0"
 
