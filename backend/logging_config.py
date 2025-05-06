@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import os
 from logging import Logger
 
 from colorlog import ColoredFormatter
@@ -7,6 +8,7 @@ from pythonjsonlogger.json import JsonFormatter
 
 from trace_context import get_trace_id
 
+LOKI_HOSTNAME = os.getenv("LOKI_HOSTNAME", "loki")
 
 class TraceJsonFormatter(JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
@@ -62,7 +64,7 @@ def generate_logging_config():
             "class": "logging_loki.LokiHandler",
             "level": "INFO",
             "formatter": "json" if "json" in formatters else "colored",
-            "url": "http://loki:3100/loki/api/v1/push",
+            "url": "http://" + LOKI_HOSTNAME + ":3100/loki/api/v1/push",
             "tags": {
                 "app": "jroots",
                 "env": "production",
