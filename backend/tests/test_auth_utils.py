@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from jose import jwt
 from fastapi import HTTPException
 from backend import auth
@@ -13,11 +13,36 @@ ALGORITHM = "HS256"
 
 @patch("backend.auth.SECRET_KEY", SECRET_KEY)
 @patch("backend.auth.ALGORITHM", ALGORITHM)
-def test_create_access_token_and_verify():
-    token = auth.create_access_token({"sub": "admin"}, timedelta(minutes=5))
+def test_create_admin_access_token_and_verify():
+    token = auth.create_admin_access_token({"sub": "admin"}, timedelta(minutes=5))
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     assert payload["sub"] == "admin"
     assert "exp" in payload
+
+
+@patch("backend.auth.SECRET_KEY", SECRET_KEY)
+@patch("backend.auth.ALGORITHM", ALGORITHM)
+def test_create_access_token():
+    user = MagicMock()
+    user.email = "test@example.com"
+    user.username = "testuser"
+    user.is_admin = True
+    user.is_verified = True
+
+    expires = timedelta(minutes=30)
+    now = datetime.now(timezone.utc)
+
+    token = auth.create_access_token(user, expires_delta=expires)
+    decoded = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+    assert decoded["sub"] == user.email
+    assert decoded["username"] == user.username
+    assert decoded["is_admin"] is True
+    assert decoded["is_verified"] is True
+
+    exp = datetime.fromtimestamp(decoded["exp"], tz=timezone.utc)
+    iat = datetime.fromtimestamp(decoded["iat"], tz=timezone.utc)
+    assert (exp - iat) == expires
 
 
 @patch("backend.auth.pwd_context.verify", return_value=True)

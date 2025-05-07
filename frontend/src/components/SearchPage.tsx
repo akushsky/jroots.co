@@ -25,9 +25,15 @@ interface SearchResult {
     image: { image_key: string, image_path: string, source: ImageSource, sha512_hash: string };
 }
 
+interface User {
+    email: string;
+    username: string;
+    is_verified: boolean;
+}
+
 export default function SearchPage() {
     const navigate = useNavigate();
-    const [user, setUser] = useState<{ email: string } | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
@@ -46,9 +52,19 @@ export default function SearchPage() {
         if (token) {
             try {
                 const decoded: any = jwtDecode(token);
-                setUser({email: decoded.sub});
-            } catch {
+
+                const now = Math.floor(Date.now() / 1000); // current time in seconds
+                if (decoded.exp && decoded.exp < now) {
+                    // Token is expired
+                    setUser(null);
+                    localStorage.removeItem("token");
+                } else {
+                    // Token is valid
+                    setUser({email: decoded.sub, username: decoded.username, is_verified: decoded.is_verified});
+                }
+            } catch (e) {
                 setUser(null);
+                localStorage.removeItem("token");
             }
         }
     }, []);
@@ -84,11 +100,15 @@ export default function SearchPage() {
 
     return (
         <div className="max-w-3xl mx-auto mt-10">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
                 <h1 className="text-xl font-semibold">Ревизия внезапных евреев</h1>
                 {user ? (
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        Вы вошли как: <span className="font-medium">{user.email}</span>
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <div className="text-right leading-tight">
+                            <div className="text-xs text-gray-500">Вы вошли как</div>
+                            <div className="font-medium">{user.username}</div>
+                            <div className="text-xs">{user.email}</div>
+                        </div>
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -122,7 +142,11 @@ export default function SearchPage() {
                                     src={`${result.thumbnail_url}`}
                                     alt="result"
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
-                                    onClick={() => setPopupImage(result.image_url)}
+                                    onClick={() => {
+                                        if (user && user.is_verified) {
+                                            setPopupImage(result.image_url)
+                                        }
+                                    }}
                                 />
                                 <div>
                                     <p>

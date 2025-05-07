@@ -36,10 +36,22 @@ def authenticate_admin(username: str, password: str):
     return {"username": username}
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_admin_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=1))
     to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_access_token(user: User, expires_delta: timedelta | None = None) -> str:
+    to_encode = {
+        "sub": user.email,
+        "username": user.username,
+        "is_admin": user.is_admin,
+        "is_verified": user.is_verified,
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + (expires_delta or timedelta(days=1))
+    }
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
