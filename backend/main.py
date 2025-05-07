@@ -116,7 +116,7 @@ async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = auth.authenticate_admin(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
-    token = auth.create_access_token({"sub": user["username"]})
+    token = auth.create_admin_access_token({"sub": user["username"]})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -370,5 +370,5 @@ async def login_user(
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Email не подтвержден")
 
-    access_token = auth.create_access_token(data={"sub": user.email})
+    access_token = auth.create_access_token(user)
     return {"access_token": access_token, "token_type": "bearer"}
