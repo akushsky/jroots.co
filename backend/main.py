@@ -237,7 +237,13 @@ async def resolve_event(id: int, db: AsyncSession = Depends(database.get_db), us
 
 
 @app.get("/api/images/{image_id}", response_class=StreamingResponse)
-async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
+async def get_image(
+        image_id: int,
+        db: AsyncSession = Depends(database.get_db),
+        current_user: Optional[models.User] = Depends(auth.get_current_user_optional)):
+    if not current_user or not current_user.is_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+
     image = await db.get(models.Image, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -279,6 +285,9 @@ async def get_image(image_id: int, db: AsyncSession = Depends(database.get_db)):
     buffer = io.BytesIO()
     watermarked.save(buffer, format="JPEG")
     buffer.seek(0)
+
+    logger.info("Image with path '%s' and key '%s' opened by user %s",
+                image.image_path, image.image_key, current_user.email)
 
     headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
     return StreamingResponse(buffer, media_type="image/jpeg", headers=headers)
@@ -324,6 +333,8 @@ async def register_user(
     db.add(user)
     await db.commit()
 
+    logger.info("User %s registered with email %s", data.username, data.email)
+
     html = f"""
     <h1>Подтвердите регистрацию</h1>
     <p>Здравствуйте, {data.username}!</p>
@@ -351,6 +362,8 @@ async def verify_user(token: str, db: AsyncSession = Depends(database.get_db)):
     user.is_verified = True
     await db.commit()
 
+    logger.info("User %s verified their email %s", user.username, user.email)
+
     return {"message": "User verified successfully"}
 
 
@@ -362,13 +375,18 @@ async def login_user(
     result = await db.execute(select(models.User).where(models.User.email == form_data.username))
     user = result.scalar_one_or_none()
     if user is None:
+        logger.error("User with email %s not found", form_data.username)
         raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
     if not auth.verify_password(form_data.password, user.hashed_password):
+        logger.error("Invalid password for user with email %s", form_data.username)
         raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Email не подтвержден")
 
     access_token = auth.create_access_token(user)
+
+    logger.info("User %s logged in with email %s", user.username, user.email)
+
     return {"access_token": access_token, "token_type": "bearer"}
