@@ -140,22 +140,36 @@ export default function SearchPage() {
                     <Card key={result.id}>
                         <div className="relative">
                             <CardContent className="flex gap-4 items-center p-4">
-                                <img
-                                    src={`${result.thumbnail_url}`}
-                                    alt="result"
-                                    className="w-20 h-20 object-cover rounded cursor-pointer"
-                                    onClick={async () => {
-                                        if (user && user.is_verified) {
-                                            setIsLoadingPopup(true);  // Start loading
-                                            // Fetch new image
-                                            const blobUrl = await fetchImage(result.image_id);
-                                            if (blobUrl) {
-                                                setPopupImage(blobUrl);
-                                            }
-                                            setIsLoadingPopup(false); // Stop loading
-                                        }
-                                    }}
-                                />
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <img
+                                                src={`${result.thumbnail_url}`}
+                                                alt="result"
+                                                className={`w-20 h-20 object-cover rounded cursor-pointer ${user?.is_verified ? '' : 'opacity-60'}`}
+                                                onClick={async () => {
+                                                    if (user && user.is_verified) {
+                                                        setIsLoadingPopup(true);  // Start loading
+                                                        const blobUrl = await fetchImage(result.image_id);
+                                                        if (blobUrl) {
+                                                            setPopupImage(blobUrl);
+                                                        }
+                                                        setIsLoadingPopup(false); // Stop loading
+                                                    }
+                                                }}
+                                            />
+                                        </TooltipTrigger>
+                                        {!user ? (
+                                            <TooltipContent>
+                                                <p>Войдите или зарегистрируйтесь, чтобы открыть полное изображение</p>
+                                            </TooltipContent>
+                                        ) : !user.is_verified ? (
+                                            <TooltipContent>
+                                                <p>Подтвердите свою учетную запись, чтобы открыть полное изображение</p>
+                                            </TooltipContent>
+                                        ) : null}
+                                    </Tooltip>
+                                </TooltipProvider>
                                 <div>
                                     <p>
                                         <Highlighter
@@ -175,7 +189,7 @@ export default function SearchPage() {
                                                         </span>
                                                     </TooltipTrigger>
                                                     <TooltipContent>
-                                                        <p>Подпишитесь, чтобы получить доступ к шифру дела</p>
+                                                        <p>Купите доступ к этой записи, чтобы увидеть шифр</p>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </TooltipProvider>
@@ -237,10 +251,12 @@ export default function SearchPage() {
                 </div>
             </div>
             {isLoadingPopup && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent"></div>
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
+                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mb-4"></div>
+                    <p className="text-white text-lg">Загрузка изображения...</p>
                 </div>
             )}
+
             {popupImage && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
