@@ -1,7 +1,13 @@
+import base64
 import hashlib
+import hmac
 
 import PIL
 from PIL import Image, ImageFont, ImageDraw
+
+import models
+from config import SECRET_KEY
+
 
 # This function applies a watermark to an image.
 async def apply_watermark(original):
@@ -42,11 +48,13 @@ async def apply_watermark(original):
 
 
 # Generate ETag based on image data
-async def generate_etag(buffer, has_access):
-    image_bytes = buffer.getvalue()
-    to_hash = image_bytes[:4096] if len(image_bytes) > 4096 else image_bytes
+async def generate_etag(image: models.Image, has_access: bool) -> str:
     # Generate ETag based on access + image hash
-    data_hash = hashlib.sha256(to_hash).hexdigest()
     access_key = "full" if has_access else "watermarked"
-    etag = f'{access_key}-{data_hash}'
-    return etag
+    etag = f'{access_key}-{image.sha512_hash}'
+    return sign_etag(etag)
+
+def sign_etag(payload: str) -> str:
+    signature = hmac.new(SECRET_KEY.encode(), payload.encode(), hashlib.sha256).digest()
+    # Base64-encode to make it HTTP-header safe
+    return base64.urlsafe_b64encode(signature).decode()

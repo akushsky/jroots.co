@@ -247,6 +247,7 @@ async def get_image(
     if not current_user or not current_user.is_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
 
+    # Fetch image from the database
     image = await db.get(models.Image, image_id)
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -257,6 +258,14 @@ async def get_image(
         has_access = await crud.user_has_access_to_image(db, current_user.id, image_id)
         logger.info("User %s has access to image %d: %s", current_user.email, image_id, has_access)
 
+    # Generate ETag
+    etag = await image_utils.generate_etag(image, has_access)
+
+    # Handle If-None-Match (client-side cache validation)
+    if if_none_match == etag:
+        return Response(status_code=304)
+
+    # Load image data
     original = Image.open(io.BytesIO(image.image_data))
     original = ImageOps.exif_transpose(original).convert("RGBA")
 
@@ -272,12 +281,6 @@ async def get_image(
     buffer = io.BytesIO()
     result.save(buffer, format="JPEG")
     buffer.seek(0)
-
-    etag = await image_utils.generate_etag(buffer, has_access)
-
-    # Handle If-None-Match (client-side cache validation)
-    if if_none_match == etag:
-        return Response(status_code=304)
 
     # Build response with headers
     headers = {
