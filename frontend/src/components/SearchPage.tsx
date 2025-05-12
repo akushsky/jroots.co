@@ -37,6 +37,7 @@ export default function SearchPage() {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
+    const [isLoadingPopup, setIsLoadingPopup] = useState(false);
     const [isZoomed, setIsZoomed] = useState(false);
 
     const [page, setPage] = useState(0);
@@ -145,11 +146,13 @@ export default function SearchPage() {
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
                                     onClick={async () => {
                                         if (user && user.is_verified) {
+                                            setIsLoadingPopup(true);  // Start loading
                                             // Fetch new image
                                             const blobUrl = await fetchImage(result.image_id);
                                             if (blobUrl) {
                                                 setPopupImage(blobUrl);
                                             }
+                                            setIsLoadingPopup(false); // Stop loading
                                         }
                                     }}
                                 />
@@ -233,6 +236,11 @@ export default function SearchPage() {
                     )}
                 </div>
             </div>
+            {isLoadingPopup && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent"></div>
+                </div>
+            )}
             {popupImage && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
