@@ -10,7 +10,7 @@ from PIL import Image as PILImage, ImageOps
 from io import BytesIO
 
 from config import SECRET_KEY, ALGORITHM
-from models import Image, SearchObject, User
+from models import Image, SearchObject, User, ImagePurchase
 
 
 async def save_unique_image(db: AsyncSession,
@@ -89,3 +89,13 @@ async def resolve_user_from_token(token: Optional[str], db: AsyncSession) -> Opt
         return result.scalar_one_or_none()
     except JWTError:
         return None
+
+
+async def user_has_access_to_image(db: AsyncSession, user_id: int, image_id: int) -> bool:
+    result = await db.execute(
+        select(ImagePurchase).where(
+            ImagePurchase.user_id == user_id,
+            ImagePurchase.image_id == image_id
+        )
+    )
+    return result.scalar() is not None

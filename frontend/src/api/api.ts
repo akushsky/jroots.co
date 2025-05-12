@@ -42,3 +42,60 @@ export const userLogin = async (email: string, password: string) =>
         username: email,
         password,
     }))).data;
+
+interface ImageCacheEntry {
+    etag: string;
+    blobUrl: string;
+}
+
+const imageCache: Record<number, ImageCacheEntry> = {};
+
+export async function fetchImage(imageId: number): Promise<string | null> {
+    const cached = imageCache[imageId];
+    const headers: Record<string, string> = {};
+
+    if (cached?.etag) {
+        headers['If-None-Match'] = cached.etag;
+    }
+
+    try {
+        const response = await apiClient.get(`/images/${imageId}`, {
+            responseType: "blob",
+            headers,
+            validateStatus: (status) => status === 200 || status === 304
+        });
+
+        if (response.status === 304 && cached) {
+            console.log(`Using cached image for ${imageId}`);
+            return cached.blobUrl;
+        }
+
+        const newEtag = response.headers['etag'];
+        const newBlobUrl = URL.createObjectURL(response.data);
+
+        // Revoke old blob if exists
+        if (cached?.blobUrl) {
+            URL.revokeObjectURL(cached.blobUrl);
+        }
+
+        // Cache new blob and etag
+        imageCache[imageId] = {
+            etag: newEtag,
+            blobUrl: newBlobUrl,
+        };
+
+        return newBlobUrl;
+    } catch (error) {
+        console.error("Error fetching image:", error);
+        return null;
+    }
+}
+
+export function clearImageCache() {
+    Object.values(imageCache).forEach(entry => {
+        URL.revokeObjectURL(entry.blobUrl);
+    });
+    Object.keys(imageCache).forEach(key => {
+        delete imageCache[+key];
+    });
+}

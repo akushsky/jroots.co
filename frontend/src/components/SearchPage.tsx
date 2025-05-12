@@ -3,7 +3,7 @@ import {jwtDecode} from "jwt-decode"; // we’ll need to install this
 import {useState, useEffect} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
-import {searchObjects} from "../api/api";
+import {clearImageCache, fetchImage, searchObjects} from "../api/api";
 import Highlighter from "react-highlight-words";
 import {Button} from "@/components/ui/button.tsx";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
@@ -18,7 +18,7 @@ interface SearchResult {
     id: number;
     text_content: string;
     price: number;
-    image_url: string;
+    image_id: number;
     thumbnail_url: string;
     image_path: string;
     similarity_score: number;
@@ -112,6 +112,7 @@ export default function SearchPage() {
                         <Button
                             variant="outline"
                             onClick={() => {
+                                clearImageCache();
                                 localStorage.removeItem("token");
                                 setUser(null);
                             }}
@@ -142,9 +143,13 @@ export default function SearchPage() {
                                     src={`${result.thumbnail_url}`}
                                     alt="result"
                                     className="w-20 h-20 object-cover rounded cursor-pointer"
-                                    onClick={() => {
+                                    onClick={async () => {
                                         if (user && user.is_verified) {
-                                            setPopupImage(result.image_url)
+                                            // Fetch new image
+                                            const blobUrl = await fetchImage(result.image_id);
+                                            if (blobUrl) {
+                                                setPopupImage(blobUrl);
+                                            }
                                         }
                                     }}
                                 />

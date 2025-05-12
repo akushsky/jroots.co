@@ -27,7 +27,7 @@ class SearchObjectSchema(BaseModel):
     text_content: str
     price: int | None
     image: ImageSchema | None
-    image_url: str | None = None  # Dynamic URL
+    image_id: int | None = None 
     thumbnail_url: str | None = None
     similarity_score: int | None = None
 

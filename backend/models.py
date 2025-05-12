@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, func, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, func, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -63,3 +63,13 @@ class AdminEvent(Base):
     is_resolved = Column(Boolean, default=False)
 
     object = relationship("SearchObject")
+
+class ImagePurchase(Base):
+    __tablename__ = "image_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    purchased_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "image_id"),)
