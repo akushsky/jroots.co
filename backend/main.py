@@ -2,18 +2,19 @@ import io
 from os import getenv
 from typing import Optional
 
-from PIL import Image, ImageFont, ImageDraw, ImageOps
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from PIL import Image, ImageOps
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, Response
 
 import auth
 import crud
 import database
+import image_utils
 import models
 import schemas
 from logging_config import setup_logging, construct_logger
@@ -100,7 +101,7 @@ async def search(q: str, skip: int = 0, limit: int = 20,
     for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
         if obj.image:
-            obj_data.image_url = f"/api/images/{obj.image.id}"
+            obj_data.image_id = obj.image.id
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
             if not current_user or not current_user.is_subscribed:
                 obj_data.image.image_path = "********"
@@ -168,7 +169,7 @@ async def list_objects(skip: int = 0, limit: int = 20,
     for obj in objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj)
         if obj.image:
-            obj_data.image_url = f"/api/images/{obj.image.id}"
+            obj_data.image_id = obj.image.id
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
         objects_with_urls.append(obj_data)
 
@@ -240,7 +241,9 @@ async def resolve_event(id: int, db: AsyncSession = Depends(database.get_db), us
 async def get_image(
         image_id: int,
         db: AsyncSession = Depends(database.get_db),
+        if_none_match: str | None = Header(default=None),
         current_user: Optional[models.User] = Depends(auth.get_current_user_optional)):
+    logger.info("User %s requested image with ID %d", current_user.email if current_user else "Anonymous", image_id)
     if not current_user or not current_user.is_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
 
@@ -248,48 +251,43 @@ async def get_image(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
+    # Determine access
+    has_access = False
+    if current_user:
+        has_access = await crud.user_has_access_to_image(db, current_user.id, image_id)
+        logger.info("User %s has access to image %d: %s", current_user.email, image_id, has_access)
+
     original = Image.open(io.BytesIO(image.image_data))
     original = ImageOps.exif_transpose(original).convert("RGBA")
 
-    watermark = Image.new("RGBA", original.size, (255, 255, 255, 0))
+    # Apply watermark if a user does not have access
+    # Prepare image data
+    result = original if has_access else await image_utils.apply_watermark(original)
 
-    # Font setup
-    font_size = max(original.width // 15, 40)
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-    except:
-        font = ImageFont.load_default()
+    # Convert to RGB if not already
+    if result.mode != "RGB":
+        result = result.convert("RGB")
 
-    watermark_text = "JRoots.co"
-    opacity = 200  # More visible watermark
-
-    # Create a single watermark image (rotated)
-    single_watermark = Image.new("RGBA", (font_size * len(watermark_text), font_size), (255, 255, 255, 0))
-    single_draw = ImageDraw.Draw(single_watermark)
-    single_draw.text((0, 0), watermark_text, font=font, fill=(255, 255, 255, opacity))
-
-    # Rotate watermark
-    angle = 30  # degrees
-    rotated_watermark = single_watermark.rotate(angle, expand=True)
-
-    # Tiled watermark placement
-    spacing_x, spacing_y = rotated_watermark.width + 100, rotated_watermark.height + 100
-    for x in range(-rotated_watermark.width, original.width + rotated_watermark.width, spacing_x):
-        for y in range(-rotated_watermark.height, original.height + rotated_watermark.height, spacing_y):
-            watermark.alpha_composite(rotated_watermark, (x, y))
-
-    # Combine watermark with the original image
-    watermarked = Image.alpha_composite(original, watermark).convert("RGB")
-
+    # Save image to buffer
     buffer = io.BytesIO()
-    watermarked.save(buffer, format="JPEG")
+    result.save(buffer, format="JPEG")
     buffer.seek(0)
+
+    etag = await image_utils.generate_etag(buffer, has_access)
+
+    # Handle If-None-Match (client-side cache validation)
+    if if_none_match == etag:
+        return Response(status_code=304)
+
+    # Build response with headers
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "max-age=3600, must-revalidate",  # Cache for 1 hour
+    }
 
     logger.info("Image with path '%s' and key '%s' opened by user %s",
                 image.image_path, image.image_key, current_user.email)
 
-    headers = {"Cache-Control": "public, max-age=86400"}  # cache for 1 day
     return StreamingResponse(buffer, media_type="image/jpeg", headers=headers)
 
 

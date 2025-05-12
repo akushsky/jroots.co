@@ -61,3 +61,13 @@ CREATE TABLE users
     is_subscribed   BOOLEAN DEFAULT FALSE
 );
 
+-- Table to track user purchases of specific search objects
+CREATE TABLE image_purchases
+(
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    image_id INT NOT NULL REFERENCES images (id) ON DELETE CASCADE,
+    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, image_id)
+);
+

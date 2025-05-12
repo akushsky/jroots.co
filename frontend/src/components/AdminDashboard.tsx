@@ -384,7 +384,7 @@ export default function AdminDashboard() {
                                         src={`${obj.thumbnail_url}`}
                                         alt="result"
                                         className="w-20 h-20 object-cover rounded cursor-pointer"
-                                        onClick={() => setPopupImage(obj.image_url)}
+                                        onClick={() => setPopupImage(`/api/images/${obj.image_id}`)}
                                     />
                                     <Button size="sm" className="mr-2 mt-2"
                                             onClick={() => handleEdit(obj)}>Редактировать</Button>
