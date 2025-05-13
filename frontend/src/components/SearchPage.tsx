@@ -3,7 +3,7 @@ import {jwtDecode} from "jwt-decode"; // we’ll need to install this
 import {useState, useEffect} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
-import {clearImageCache, fetchImage, searchObjects} from "../api/api";
+import {clearImageCache, fetchImage, searchObjects, validateToken} from "../api/api";
 import Highlighter from "react-highlight-words";
 import {Button} from "@/components/ui/button.tsx";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
@@ -95,6 +95,23 @@ export default function SearchPage() {
 
         return () => clearTimeout(delay);
     }, [query, page]);
+
+    useEffect(() => {
+        const validUser = validateToken();
+        setUser(validUser);
+    }, []);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const validUser = validateToken();
+            setUser(validUser);
+            if (!validUser) {
+                navigate("/login");
+            }
+        }, 60 * 1000); // check every 60 seconds
+
+        return () => clearInterval(interval);
+    }, []);
 
     const pageCount = Math.ceil(total / pageSize);
     const visiblePages = getPaginationPages(page, pageCount);
