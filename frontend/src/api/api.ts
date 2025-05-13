@@ -1,4 +1,5 @@
 import axios from "axios";
+import {jwtDecode} from "jwt-decode";
 
 export const apiClient = axios.create({
     baseURL: "/api",
@@ -98,4 +99,26 @@ export function clearImageCache() {
     Object.keys(imageCache).forEach(key => {
         delete imageCache[+key];
     });
+}
+
+export function validateToken() {
+    const token = localStorage.getItem("token");
+    if (token) {
+        try {
+            const decoded: any = jwtDecode(token);
+            const now = Math.floor(Date.now() / 1000);
+            if (decoded.exp && decoded.exp < now) {
+                localStorage.removeItem("token");
+                return null;
+            }
+            return {
+                email: decoded.sub,
+                username: decoded.username,
+                is_verified: decoded.is_verified,
+            };
+        } catch {
+            localStorage.removeItem("token");
+        }
+    }
+    return null;
 }
