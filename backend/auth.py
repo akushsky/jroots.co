@@ -10,6 +10,8 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import database
+import models
+from logging_middleware import logger
 from config import PASSWORD, SECRET_KEY, ALGORITHM
 from crud import resolve_user_from_token
 from models import User
@@ -28,19 +30,22 @@ admin = {
 }
 
 
-def authenticate_admin(username: str, password: str):
-    if username != admin["username"]:
-        return False
-    if not pwd_context.verify(password, admin["hashed_password"]):
-        return False
-    return {"username": username}
+def authenticate(user: models.User, username: str, password: str) -> str | None:
+    if user is None:
+        logger.error("User with email %s not found", username)
+        raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
+    if not verify_password(password, admin["hashed_password"] if user.is_admin  else user.hashed_password):
+        logger.error("Invalid password for user with email %s", username)
+        raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
-def create_admin_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=1))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="Email не подтвержден")
+
+    access_token = create_access_token(user)
+
+    logger.info("User %s logged in with email %s", user.username, user.email)
+    return access_token
 
 
 def create_access_token(user: User, expires_delta: timedelta | None = None) -> str:
@@ -55,20 +60,19 @@ def create_access_token(user: User, expires_delta: timedelta | None = None) -> s
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-async def get_current_admin(token: str = Depends(admin_oauth2_scheme)):
+async def get_current_admin(
+        token: str = Depends(admin_oauth2_scheme),
+        db: AsyncSession = Depends(database.get_db)
+) -> str | None:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username != admin["username"]:
-            raise credentials_exception
-    except JWTError:
+    admin_user = await resolve_user_from_token(token, db)
+    if admin_user is None or not admin_user.is_admin:
         raise credentials_exception
-    return username
+    return admin_user.email
 
 
 def verify_hcaptcha(token: str) -> bool:

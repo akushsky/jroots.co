@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { adminLogin } from "../api/api";
+import {userLogin} from "../api/api";
 
 export default function AdminLogin() {
     const [username, setUsername] = useState("");
@@ -10,7 +10,7 @@ export default function AdminLogin() {
 
     const handleLogin = async () => {
         try {
-            const data = await adminLogin(username, password);
+            const data = await userLogin(username, password);
             localStorage.setItem("token", data.access_token);
             window.location.href = "/admin/dashboard";
         } catch {
@@ -32,7 +32,11 @@ export default function AdminLogin() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
             />
-            {error && <p className="text-red-500">{error}</p>}
+            {error && (
+                <div className="bg-red-100 text-red-800 px-4 py-2 rounded text-sm">
+                    {error}
+                </div>
+            )}
             <Button onClick={handleLogin}>Login</Button>
         </div>
     );

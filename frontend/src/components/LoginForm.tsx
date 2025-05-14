@@ -8,13 +8,14 @@ import {useNavigate} from "react-router-dom";
 export default function LoginForm() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
     const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         if (!email || !password) {
-            alert("Пожалуйста, заполните все поля");
+            setError("Пожалуйста, заполните все поля");
             return;
         }
 
@@ -23,7 +24,7 @@ export default function LoginForm() {
             localStorage.setItem("token", data.access_token);
             navigate("/");
         } catch {
-            // setError("Invalid credentials");
+            setError("Неверные учетные данные");
         }
     };
 
@@ -32,7 +33,7 @@ export default function LoginForm() {
             <Card>
                 <CardContent className="p-6 space-y-4">
                     <h2 className="text-xl font-semibold text-center">Вход</h2>
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                         <Input
                             type="email"
                             placeholder="Email"
@@ -47,6 +48,11 @@ export default function LoginForm() {
                             onChange={(e) => setPassword(e.target.value)}
                             required
                         />
+                        {error && (
+                            <div className="bg-red-100 text-red-800 px-4 py-2 rounded text-sm">
+                                {error}
+                            </div>
+                        )}
                         <Button type="submit" className="w-full">
                             Войти
                         </Button>

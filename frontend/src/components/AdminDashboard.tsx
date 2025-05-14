@@ -2,10 +2,10 @@ import {useState, useEffect} from "react";
 import {
     apiClient,
     createSearchObject,
-    deleteSearchObject,
+    deleteSearchObject, fetchImage,
     fetchObjects,
     searchObjects,
-    updateSearchObject
+    updateSearchObject, validateToken
 } from "../api/api";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -14,6 +14,9 @@ import Highlighter from "react-highlight-words";
 import {getPaginationPages} from "@/api/paginate.ts";
 import {paths} from "@/types/api";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
+import {jwtDecode} from "jwt-decode";
+import {useNavigate} from "react-router-dom";
+import {User} from "@/components/User.tsx";
 
 interface ImageSource {
     id: number;
@@ -35,11 +38,14 @@ type SearchResponseBody = SearchResponse["content"]["application/json"];
 type SearchObject = SearchResponseBody["items"][number];
 
 export default function AdminDashboard() {
+    const navigate = useNavigate();
     const [objects, setObjects] = useState<SearchObject[]>([]);
     const [query, setQuery] = useState("");
     const [imageSources, setImageSources] = useState<ImageSource[]>([]);
+    const [isLoadingPopup, setIsLoadingPopup] = useState(false);
     const [popupImage, setPopupImage] = useState<string | null>(null);
     const [isZoomed, setIsZoomed] = useState(false);
+    const [user, setUser] = useState<User | null>(null);
 
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
@@ -94,6 +100,45 @@ export default function AdminDashboard() {
 
         return () => clearTimeout(delay);
     }, [query, page]);
+
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if (token) {
+            try {
+                const decoded: any = jwtDecode(token);
+
+                const now = Math.floor(Date.now() / 1000); // current time in seconds
+                if (decoded.exp && decoded.exp < now) {
+                    // Token is expired
+                    setUser(null);
+                    localStorage.removeItem("token");
+                } else {
+                    // Token is valid
+                    setUser({email: decoded.sub, username: decoded.username, is_verified: decoded.is_verified});
+                }
+            } catch (e) {
+                setUser(null);
+                localStorage.removeItem("token");
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const validUser = validateToken();
+        setUser(validUser);
+    }, []);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const validUser = validateToken();
+            setUser(validUser);
+            if (!validUser) {
+                navigate("/admin/login");
+            }
+        }, 60 * 1000); // check every 60 seconds
+
+        return () => clearInterval(interval);
+    }, []);
 
     const clearForm = () => {
         setForm({
@@ -384,7 +429,17 @@ export default function AdminDashboard() {
                                         src={`${obj.thumbnail_url}`}
                                         alt="result"
                                         className="w-20 h-20 object-cover rounded cursor-pointer"
-                                        onClick={() => setPopupImage(`/api/images/${obj.image_id}`)}
+                                        onClick={async () => {
+                                            if (user && user.is_verified) {
+                                                setIsLoadingPopup(true);  // Start loading
+                                                console.log(obj)
+                                                const blobUrl = await fetchImage(obj.image?.id);
+                                                if (blobUrl) {
+                                                    setPopupImage(blobUrl);
+                                                }
+                                                setIsLoadingPopup(false); // Stop loading
+                                            }
+                                        }}
                                     />
                                     <Button size="sm" className="mr-2 mt-2"
                                             onClick={() => handleEdit(obj)}>Редактировать</Button>
@@ -405,7 +460,7 @@ export default function AdminDashboard() {
                                         </div>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        <p>Цена за просмотр полного изображения и метаданных</p>
+                                        <p>Цена за доступ к полному изображению и шифру дела</p>
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>
@@ -428,6 +483,13 @@ export default function AdminDashboard() {
                     )
                 )}
             </div>
+            {isLoadingPopup && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
+                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mb-4"></div>
+                    <p className="text-white text-lg">Загрузка изображения...</p>
+                </div>
+            )}
+
             {popupImage && (
                 <div
                     className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"

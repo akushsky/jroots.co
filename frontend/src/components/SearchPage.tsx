@@ -1,6 +1,6 @@
 import {useNavigate} from "react-router-dom";
 import {jwtDecode} from "jwt-decode"; // we’ll need to install this
-import {useState, useEffect} from "react";
+import {useEffect, useState} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import {clearImageCache, fetchImage, searchObjects, validateToken} from "../api/api";
@@ -8,6 +8,7 @@ import Highlighter from "react-highlight-words";
 import {Button} from "@/components/ui/button.tsx";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
 import {getPaginationPages} from "@/api/paginate.ts";
+import {User} from "@/components/User.tsx";
 
 interface ImageSource {
     id: number;
@@ -23,12 +24,6 @@ interface SearchResult {
     image_path: string;
     similarity_score: number;
     image: { image_key: string, image_path: string, source: ImageSource, sha512_hash: string };
-}
-
-interface User {
-    email: string;
-    username: string;
-    is_verified: boolean;
 }
 
 export default function SearchPage() {

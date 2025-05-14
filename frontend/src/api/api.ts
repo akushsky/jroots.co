@@ -18,9 +18,6 @@ export const searchObjects = async (q: string, page: number, pageSize: number) =
 export const fetchObjects = async (page: number, pageSize: number) =>
     (await apiClient.get(`/admin/objects?skip=${page * pageSize}&limit=${pageSize}`)).data;
 
-export const adminLogin = async (username: string, password: string) =>
-    (await apiClient.post("/admin/login", new URLSearchParams({username, password}))).data;
-
 export const createSearchObject = async (formData: FormData) =>
     (await apiClient.post("/admin/objects", formData)).data;
 
