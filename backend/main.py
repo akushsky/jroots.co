@@ -112,15 +112,6 @@ async def search(q: str, skip: int = 0, limit: int = 20,
     return {"items": objects_with_urls, "total": total}
 
 
-@app.post("/api/admin/login")
-async def admin_login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = auth.authenticate_admin(form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
-    token = auth.create_admin_access_token({"sub": user["username"]})
-    return {"access_token": token, "token_type": "bearer"}
-
-
 @app.post("/api/admin/images", response_model=schemas.ImageSchema)
 async def create_image(image_path: str = Form(...), image_key: str = Form(...),
                        image_source_id: Optional[int] = Form(None), image_file: UploadFile = File(...),
@@ -180,6 +171,7 @@ async def list_objects(skip: int = 0, limit: int = 20,
 async def update_object(
         object_id: int,
         text_content: str = Form(...),
+        price: int = Form(...),
         image_path: str = Form(...),
         image_key: str = Form(...),
         image_source_id: int | None = Form(None),
@@ -191,7 +183,9 @@ async def update_object(
     if not obj:
         raise HTTPException(status_code=404, detail="Object not found")
 
+    # Update valuable fields
     obj.text_content = text_content
+    obj.price = price
 
     if image_file:
         image_binary = await image_file.read()
@@ -255,7 +249,10 @@ async def get_image(
     # Determine access
     has_access = False
     if current_user:
-        has_access = await crud.user_has_access_to_image(db, current_user.id, image_id)
+        if current_user.is_admin:
+            has_access = True
+        else:
+            has_access = await crud.user_has_access_to_image(db, current_user.id, image_id)
         logger.info("User %s has access to image %d: %s", current_user.email, image_id, has_access)
 
     # Generate ETag
@@ -375,19 +372,5 @@ async def login_user(
 ):
     result = await db.execute(select(models.User).where(models.User.email == form_data.username))
     user = result.scalar_one_or_none()
-    if user is None:
-        logger.error("User with email %s not found", form_data.username)
-        raise HTTPException(status_code=400, detail="Неверный email или пароль")
-
-    if not auth.verify_password(form_data.password, user.hashed_password):
-        logger.error("Invalid password for user with email %s", form_data.username)
-        raise HTTPException(status_code=400, detail="Неверный email или пароль")
-
-    if not user.is_verified:
-        raise HTTPException(status_code=403, detail="Email не подтвержден")
-
-    access_token = auth.create_access_token(user)
-
-    logger.info("User %s logged in with email %s", user.username, user.email)
-
+    access_token = auth.authenticate(user, form_data.username, form_data.password)
     return {"access_token": access_token, "token_type": "bearer"}

@@ -13,15 +13,6 @@ ALGORITHM = "HS256"
 
 @patch("backend.auth.SECRET_KEY", SECRET_KEY)
 @patch("backend.auth.ALGORITHM", ALGORITHM)
-def test_create_admin_access_token_and_verify():
-    token = auth.create_admin_access_token({"sub": "admin"}, timedelta(minutes=5))
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    assert payload["sub"] == "admin"
-    assert "exp" in payload
-
-
-@patch("backend.auth.SECRET_KEY", SECRET_KEY)
-@patch("backend.auth.ALGORITHM", ALGORITHM)
 def test_create_access_token():
     user = MagicMock()
     user.email = "test@example.com"
@@ -43,23 +34,6 @@ def test_create_access_token():
     exp = datetime.fromtimestamp(decoded["exp"], tz=timezone.utc)
     iat = datetime.fromtimestamp(decoded["iat"], tz=timezone.utc)
     assert (exp - iat) == expires
-
-
-@patch("backend.auth.pwd_context.verify", return_value=True)
-def test_authenticate_admin_success(mock_verify):
-    result = auth.authenticate_admin("admin", "fake_password")
-    assert result == {"username": "admin"}
-
-
-@patch("backend.auth.pwd_context.verify", return_value=False)
-def test_authenticate_admin_invalid_password(mock_verify):
-    result = auth.authenticate_admin("admin", "wrong")
-    assert result is False
-
-
-def test_authenticate_admin_invalid_username():
-    result = auth.authenticate_admin("notadmin", "whatever")
-    assert result is False
 
 
 @patch("backend.auth.SECRET_KEY", SECRET_KEY)
