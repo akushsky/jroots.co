@@ -27,11 +27,12 @@ export const updateSearchObject = async (objectId: number, formData: FormData) =
 export const deleteSearchObject = async (objectId: number) =>
     (await apiClient.delete(`/admin/objects/${objectId}`)).data;
 
-export const userRegister = async (username: string, email: string, password: string, captchaToken: string) =>
+export const userRegister = async (username: string, email: string, password: string, telegramUsername: string, captchaToken: string) =>
     (await apiClient.post("/register", {
         "username": username,
         "email": email,
         "password": password,
+        "telegram_username": telegramUsername,
         "captcha_token": captchaToken
     })).data;
 

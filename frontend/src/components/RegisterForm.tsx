@@ -9,6 +9,7 @@ export default function RegisterForm() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [username, setUsername] = useState("");
+    const [telegramUsername, setTelegramUsername] = useState("");
     const [captchaToken, setCaptchaToken] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -30,13 +31,27 @@ export default function RegisterForm() {
             return;
         }
 
+        if (telegramUsername && !isValidTelegramUsername(telegramUsername)) {
+            setErrorMessage("Неверный формат Telegram-имени пользователя");
+            return;
+        }
+
         try {
-            const data = await userRegister(username, email, password, captchaToken);
+            const cleanTelegram = telegramUsername.startsWith("@")
+                ? telegramUsername.slice(1)
+                : telegramUsername;
+
+            const data = await userRegister(username, email, password, cleanTelegram, captchaToken);
             setSuccessMessage(data.message || "Регистрация прошла успешно.");
         } catch (err) {
             setErrorMessage("Ошибка регистрации. Попробуйте ещё раз.");
         }
     };
+
+    function isValidTelegramUsername(username: string): boolean {
+        const clean = username.startsWith("@") ? username.slice(1) : username;
+        return /^[a-zA-Z0-9](?:[a-zA-Z0-9_]{3,30}[a-zA-Z0-9])?$/.test(clean);
+    }
 
     return (
         <div className="max-w-md mx-auto mt-16">
@@ -74,6 +89,12 @@ export default function RegisterForm() {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
+                        />
+                        <Input
+                            type="text"
+                            placeholder="Telegram (необязательно)"
+                            value={telegramUsername}
+                            onChange={(e) => setTelegramUsername(e.target.value)}
                         />
                         <HCaptcha
                             sitekey="0a40b9c4-3a0a-4438-b590-05e697d46740"
