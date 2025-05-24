@@ -121,7 +121,7 @@ async def search(q: str, skip: int = 0, limit: int = 20,
         if obj.image:
             obj_data.image_id = obj.image.id
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
-            if not current_user or not current_user.is_admin or obj.image.id not in purchased_images:
+            if not current_user or (not current_user.is_admin and obj.image.id not in purchased_images):
                 obj_data.image.image_path = "********"
         obj_data.price = obj.price
         obj_data.similarity_score = round(score * 100)
