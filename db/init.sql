@@ -16,9 +16,9 @@ CREATE TABLE search_objects
     id           SERIAL PRIMARY KEY,
     text_content TEXT NOT NULL,
     image_id     INT  REFERENCES images (id) ON DELETE SET NULL,
-    price        INT NOT NULL DEFAULT 300,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    price        INT  NOT NULL DEFAULT 300,
+    created_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -40,14 +40,15 @@ CREATE TABLE admin_events
 -- Images table for storing image data
 CREATE TABLE images
 (
-    id              SERIAL PRIMARY KEY,
-    image_path      TEXT  NOT NULL,
-    image_key       TEXT  NOT NULL,
-    image_source_id INT   REFERENCES image_sources (id) ON DELETE SET NULL,
-    image_data      BYTEA NOT NULL,
-    thumbnail_data  BYTEA,
-    sha512_hash     TEXT  NOT NULL UNIQUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id               SERIAL PRIMARY KEY,
+    image_path       TEXT  NOT NULL,
+    image_key        TEXT  NOT NULL,
+    image_source_id  INT   REFERENCES image_sources (id) ON DELETE SET NULL,
+    telegram_file_id TEXT,
+    image_data       BYTEA NOT NULL,
+    thumbnail_data   BYTEA,
+    sha512_hash      TEXT  NOT NULL UNIQUE,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE users
@@ -64,9 +65,9 @@ CREATE TABLE users
 -- Table to track user purchases of specific search objects
 CREATE TABLE image_purchases
 (
-    id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    image_id INT NOT NULL REFERENCES images (id) ON DELETE CASCADE,
+    id           SERIAL PRIMARY KEY,
+    user_id      INT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    image_id     INT NOT NULL REFERENCES images (id) ON DELETE CASCADE,
     purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, image_id)
 );

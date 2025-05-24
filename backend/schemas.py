@@ -15,6 +15,7 @@ class ImageSchema(BaseModel):
     id: int
     image_path: str
     image_key: str
+    telegram_file_id: str | None
     source: ImageSourceSchema | None
     sha512_hash: str
 
@@ -67,6 +68,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+    class Config:
+        from_attributes = True
+
+class AccessRequest(BaseModel):
+    username: str
+    email: str
+    image_id: int
 
     class Config:
         from_attributes = True

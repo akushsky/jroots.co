@@ -1,7 +1,9 @@
 import io
+import traceback
 from os import getenv
 from typing import Optional
 
+import httpx
 from PIL import Image, ImageOps
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +35,9 @@ app = FastAPI()
 
 origins = getenv("CORS_ORIGINS", "*").split(",")
 FRONTEND_URL = getenv("FRONTEND_URL", "http://localhost:5173")
+
+TELEGRAM_BOT_TOKEN = getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = getenv("TELEGRAM_CHAT_ID")
 
 # noinspection PyTypeChecker
 app.add_middleware(
@@ -98,12 +103,25 @@ async def search(q: str, skip: int = 0, limit: int = 20,
     logger.info("Found %d objects for query '%s' and user '%s'", len(search_objects), q,
                 current_user.email if current_user else "Anonymous")
 
+    # Retrieve images from found, purchased by user
+    if current_user and current_user.is_verified:
+        result = await db.execute(
+            select(models.ImagePurchase)
+            .where(models.ImagePurchase.user_id == current_user.id,
+                    models.ImagePurchase.image_id.in_([obj.image.id for obj, _ in search_objects if obj.image]))
+        )
+        purchased_images = {purchase.image_id for purchase in result.scalars().all()}
+        logger.info("User %s has purchased images: %s", current_user.email, purchased_images)
+    else:
+        purchased_images = set()
+
+
     for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
         if obj.image:
             obj_data.image_id = obj.image.id
             obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
-            if not current_user or not current_user.is_subscribed:
+            if not current_user or not current_user.is_admin or obj.image.id not in purchased_images:
                 obj_data.image.image_path = "********"
         obj_data.price = obj.price
         obj_data.similarity_score = round(score * 100)
@@ -374,3 +392,75 @@ async def login_user(
     user = result.scalar_one_or_none()
     access_token = auth.authenticate(user, form_data.username, form_data.password)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/api/request_access")
+async def request_access(
+        data: schemas.AccessRequest,
+        db: AsyncSession = Depends(database.get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
+        current_user: Optional[models.User] = Depends(auth.get_current_user_optional)):
+    logger.info("User %s requested full access to image with ID %d",
+                current_user.email if current_user else "Anonymous", data.image_id)
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        raise HTTPException(status_code=500, detail="Telegram configuration missing.")
+
+    if not current_user or not current_user.is_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+
+    # Fetch image from the database
+    result = await db.execute(
+        select(models.Image).options(selectinload(models.Image.source)).where(models.Image.id == data.image_id)
+    )
+    image = result.scalars().first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    caption = (
+        f"📨 Новый запрос на доступ\n"
+        f"👤 Пользователь: {data.username} ({data.email})\n"
+        f"🖼️ Изображение: {image.image_key}\n"
+        f"📁 Шифр: {image.image_path}\n"
+        f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}"
+    )
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    async with httpx.AsyncClient(verify=False) as client:
+        if image.telegram_file_id:
+            json = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "photo": image.telegram_file_id,
+                "caption": caption,
+            }
+            response = await client.post(url, json=json)
+            logger.info("User %s sent image %s to Telegram chat %s using existing file_id", current_user.email,
+                        image.id, TELEGRAM_CHAT_ID)
+        else:
+            payload = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "caption": caption,
+            }
+            files = {
+                "photo": ("image.jpg", io.BytesIO(image.image_data), "image/jpeg")
+            }
+            response = await client.post(url, data=payload, files=files)
+            logger.info("User %s sent image %s to Telegram chat %s", current_user.email, image.id,
+                        TELEGRAM_CHAT_ID)
+            # Save file_id for future use
+            if response.status_code == 200:
+                data = response.json()
+                try:
+                    file_id = data["result"]["photo"][-1]["file_id"]  # Highest resolution
+                    image.telegram_file_id = file_id
+                    await db.commit()
+                    logger.info("User %s updated image %s with telegram id", current_user.email, image.id)
+                except Exception:
+                    logger.error(traceback.format_exc())
+                    pass
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Не удалось отправить сообщение в Telegram.")
+
+    return {"ok": True}
