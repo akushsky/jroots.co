@@ -420,11 +420,11 @@ async def request_access(
 
     telegram_line = f"✈️ Telegram: @{current_user.telegram_username}" if current_user.telegram_username else ""
     caption = "\n".join(filter(None, [
-        f"📨 Новый запрос на доступ\n",
-        f"👤 Пользователь: {data.username} ({data.email})\n",
+        f"📨 Новый запрос на доступ",
+        f"👤 Пользователь: {data.username} ({data.email})",
         telegram_line,
-        f"🖼️ Изображение: {image.image_key}\n",
-        f"📁 Шифр: {image.image_path}\n",
+        f"🖼️ Изображение: {image.image_key}",
+        f"📁 Шифр: {image.image_path}",
         f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}",
     ]))
 
