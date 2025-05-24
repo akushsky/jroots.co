@@ -28,7 +28,7 @@ class SearchObjectSchema(BaseModel):
     text_content: str
     price: int | None
     image: ImageSchema | None
-    image_id: int | None = None 
+    image_id: int | None = None
     thumbnail_url: str | None = None
     similarity_score: int | None = None
 
@@ -73,10 +73,12 @@ class LoginRequest(BaseModel):
     class Config:
         from_attributes = True
 
+
 class AccessRequest(BaseModel):
     username: str
     email: str
     image_id: int
+    search_text_content: str
 
     class Config:
         from_attributes = True

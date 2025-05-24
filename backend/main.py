@@ -423,6 +423,7 @@ async def request_access(
         f"📨 Новый запрос на доступ",
         f"👤 Пользователь: {data.username} ({data.email})",
         telegram_line,
+        f"💬 Внезапный еврей: {data.search_text_content}",
         f"🖼️ Изображение: {image.image_key}",
         f"📁 Шифр: {image.image_path}",
         f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}",
