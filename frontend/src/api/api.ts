@@ -42,11 +42,12 @@ export const userLogin = async (email: string, password: string) =>
         password,
     }))).data;
 
-export const requestAccess = async (username: string, email: string, image_id: number) =>
+export const requestAccess = async (username: string, email: string, image_id: number, search_text_content: string) =>
     (await apiClient.post("/request_access", {
         "username": username,
         "email": email,
-        "image_id": image_id
+        "image_id": image_id,
+        "search_text_content": search_text_content
     })).data;
 
 interface ImageCacheEntry {

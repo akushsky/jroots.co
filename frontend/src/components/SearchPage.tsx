@@ -48,7 +48,7 @@ export function SearchPage() {
         }
 
         try {
-            await requestAccess(user.username, user.email, result.image_id);
+            await requestAccess(user.username, user.email, result.image_id, result.text_content);
             setSuccessMessage("Запрос успешно отправлен администратору.");
 
             // ✅ Update local state to mark the result as requested
