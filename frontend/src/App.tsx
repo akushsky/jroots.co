@@ -1,5 +1,5 @@
 import {BrowserRouter as Router, Routes, Route, Navigate} from "react-router-dom";
-import SearchPage from "./components/SearchPage";
+import {SearchPage} from "./components/SearchPage";
 import AdminLogin from "./components/AdminLogin";
 import AdminDashboard from "./components/AdminDashboard";
 import {Heart, Mail, Info} from "lucide-react";

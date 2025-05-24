@@ -41,6 +41,13 @@ export const userLogin = async (email: string, password: string) =>
         password,
     }))).data;
 
+export const requestAccess = async (username: string, email: string, image_id: number) =>
+    (await apiClient.post("/request_access", {
+        "username": username,
+        "email": email,
+        "image_id": image_id
+    })).data;
+
 interface ImageCacheEntry {
     etag: string;
     blobUrl: string;

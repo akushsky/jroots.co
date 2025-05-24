@@ -3,7 +3,7 @@ import {jwtDecode} from "jwt-decode"; // we’ll need to install this
 import {useEffect, useState} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
-import {clearImageCache, fetchImage, searchObjects, validateToken} from "../api/api";
+import {clearImageCache, fetchImage, requestAccess, searchObjects, validateToken} from "../api/api";
 import Highlighter from "react-highlight-words";
 import {Button} from "@/components/ui/button.tsx";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
@@ -24,9 +24,10 @@ interface SearchResult {
     image_path: string;
     similarity_score: number;
     image: { image_key: string, image_path: string, source: ImageSource, sha512_hash: string };
+    requested?: boolean;
 }
 
-export default function SearchPage() {
+export function SearchPage() {
     const navigate = useNavigate();
     const [user, setUser] = useState<User | null>(null);
     const [query, setQuery] = useState("");
@@ -34,10 +35,34 @@ export default function SearchPage() {
     const [popupImage, setPopupImage] = useState<string | null>(null);
     const [isLoadingPopup, setIsLoadingPopup] = useState(false);
     const [isZoomed, setIsZoomed] = useState(false);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
     const pageSize = 20;
+
+    const sendRequestAccess = async (result: SearchResult) => {
+        if (!user) {
+            setSuccessMessage("Пожалуйста, войдите, чтобы отправить запрос.");
+            return;
+        }
+
+        try {
+            await requestAccess(user.username, user.email, result.image_id);
+            setSuccessMessage("Запрос успешно отправлен администратору.");
+
+            // ✅ Update local state to mark the result as requested
+            setResults((prev) =>
+                prev.map((r) =>
+                    r.id === result.id ? {...r, requested: true} : r
+                )
+            );
+        } catch (e) {
+            setSuccessMessage("Произошла ошибка при отправке запроса.");
+        }
+
+        setTimeout(() => setSuccessMessage(null), 5000);
+    };
 
     useEffect(() => {
         setPage(0);
@@ -218,23 +243,35 @@ export default function SearchPage() {
                                             textToHighlight={`(${result.image?.source?.source_name}) ${result.image?.image_key}`}
                                         />
                                     </div>
-
                                 </div>
                             </CardContent>
                             {result.price !== undefined && (
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div
-                                                className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-3 py-1 rounded-full shadow cursor-help">
-                                                {(result.price / 100).toFixed(2)} €
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Цена за доступ к полному изображению и шифру дела</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
+                                <div className="absolute top-2 right-2 z-10">
+                                    {result.requested ? (
+                                        <div
+                                            className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
+                                            ✅ Запрос отправлен
+                                        </div>
+                                    ) : (
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        className="text-xs px-2 py-1 h-auto rounded-full shadow"
+                                                        onClick={() => sendRequestAccess(result)}
+                                                    >
+                                                        €{(result.price / 100).toFixed(2)}
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p>Нажмите, чтобы отправить запрос на доступ</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </Card>
@@ -264,7 +301,8 @@ export default function SearchPage() {
             </div>
             {isLoadingPopup && (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
-                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mb-4"></div>
+                    <div
+                        className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mb-4"></div>
                     <p className="text-white text-lg">Загрузка изображения...</p>
                 </div>
             )}
@@ -309,6 +347,12 @@ export default function SearchPage() {
                             onClick={() => setIsZoomed((z) => !z)}
                         />
                     </div>
+                </div>
+            )}
+
+            {successMessage && (
+                <div className="text-green-600 text-center font-medium mt-4">
+                    {successMessage}
                 </div>
             )}
         </div>

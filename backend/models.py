@@ -32,6 +32,7 @@ class Image(Base):
     image_path = Column(String, nullable=False)
     image_key = Column(String, nullable=False)
     image_source_id = Column(Integer, ForeignKey("image_sources.id", ondelete="SET NULL"))
+    telegram_file_id = Column(String, nullable=True)
     image_data = Column(LargeBinary, nullable=False)
     thumbnail_data = Column(LargeBinary)
     sha512_hash = Column(String, nullable=False, unique=True)
