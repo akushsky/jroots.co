@@ -343,6 +343,7 @@ async def register_user(
         username=data.username,
         email=data.email,
         hashed_password=hashed_pw,
+        telegram_username=data.telegram_username,
         is_verified=False
     )
 
@@ -417,13 +418,15 @@ async def request_access(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    caption = (
-        f"📨 Новый запрос на доступ\n"
-        f"👤 Пользователь: {data.username} ({data.email})\n"
-        f"🖼️ Изображение: {image.image_key}\n"
-        f"📁 Шифр: {image.image_path}\n"
-        f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}"
-    )
+    telegram_line = f"✈️ Telegram: @{current_user.telegram_username}" if current_user.telegram_username else ""
+    caption = "\n".join(filter(None, [
+        f"📨 Новый запрос на доступ\n",
+        f"👤 Пользователь: {data.username} ({data.email})\n",
+        telegram_line,
+        f"🖼️ Изображение: {image.image_key}\n",
+        f"📁 Шифр: {image.image_path}\n",
+        f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}",
+    ]))
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
 

@@ -53,13 +53,14 @@ CREATE TABLE images
 
 CREATE TABLE users
 (
-    id              SERIAL PRIMARY KEY,
-    username        VARCHAR(150) UNIQUE NOT NULL,
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255)        NOT NULL,
-    is_admin        BOOLEAN DEFAULT FALSE,
-    is_verified     BOOLEAN DEFAULT FALSE,
-    is_subscribed   BOOLEAN DEFAULT FALSE
+    id                SERIAL PRIMARY KEY,
+    username          VARCHAR(150) UNIQUE NOT NULL,
+    email             VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password   VARCHAR(255)        NOT NULL,
+    telegram_username VARCHAR(150) UNIQUE,
+    is_admin          BOOLEAN DEFAULT FALSE,
+    is_verified       BOOLEAN DEFAULT FALSE,
+    is_subscribed     BOOLEAN DEFAULT FALSE
 );
 
 -- Table to track user purchases of specific search objects

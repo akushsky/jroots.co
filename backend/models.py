@@ -11,6 +11,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     email = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
+    telegram_username = Column(String, nullable=True)
 
     is_admin = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
