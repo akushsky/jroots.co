@@ -262,7 +262,10 @@ export function SearchPage() {
                                                         className="text-xs px-2 py-1 h-auto rounded-full shadow"
                                                         onClick={() => sendRequestAccess(result)}
                                                     >
-                                                        €{(result.price / 100).toFixed(2)}
+                                                        <span
+                                                            className="hidden md:inline">€{(result.price / 100).toFixed(2)}</span>
+                                                        <span
+                                                            className="inline md:hidden">Запросить за €{(result.price / 100).toFixed(2)}</span>
                                                     </Button>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
