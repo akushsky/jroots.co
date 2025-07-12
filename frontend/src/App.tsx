@@ -12,12 +12,12 @@ import LoginForm from "@/components/LoginForm.tsx";
 function WelcomePopup({onClose}) {
     return (
         <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-start sm:items-center z-50 p-4 py-8 overflow-y-auto">
             <div
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 md:p-8 relative text-gray-800">
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 md:p-8 relative text-gray-800 overflow-y-auto max-h-full">
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors"
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors z-10"
                 >
                     <X className="w-6 h-6"/>
                 </button>
