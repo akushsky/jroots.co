@@ -85,6 +85,7 @@ class Chat(BaseModel):
 class Message(BaseModel):
     message_id: int
     chat: Chat
+    caption: str | None
 
 class CallbackQuery(BaseModel):
     id: str
