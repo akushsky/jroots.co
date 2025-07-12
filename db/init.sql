@@ -47,7 +47,7 @@ CREATE TABLE users
     username          VARCHAR(150) UNIQUE NOT NULL,
     email             VARCHAR(255) UNIQUE NOT NULL,
     hashed_password   VARCHAR(255)        NOT NULL,
-    telegram_username VARCHAR(150) UNIQUE,
+    telegram_username VARCHAR(150),
     is_admin          BOOLEAN DEFAULT FALSE,
     is_verified       BOOLEAN DEFAULT FALSE,
     is_subscribed     BOOLEAN DEFAULT FALSE
