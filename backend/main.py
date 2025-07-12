@@ -4,8 +4,9 @@ from os import getenv
 from typing import Optional
 
 import httpx
+import schemas
 from PIL import Image, ImageOps
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Header
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, func, or_, text
@@ -18,7 +19,6 @@ import crud
 import database
 import image_utils
 import models
-import schemas
 from logging_config import setup_logging, construct_logger
 from logging_middleware import LoggingMiddleware
 from resend_service import send_email
@@ -108,13 +108,12 @@ async def search(q: str, skip: int = 0, limit: int = 20,
         result = await db.execute(
             select(models.ImagePurchase)
             .where(models.ImagePurchase.user_id == current_user.id,
-                    models.ImagePurchase.image_id.in_([obj.image.id for obj, _ in search_objects if obj.image]))
+                   models.ImagePurchase.image_id.in_([obj.image.id for obj, _ in search_objects if obj.image]))
         )
         purchased_images = {purchase.image_id for purchase in result.scalars().all()}
         logger.info("User %s has purchased images: %s", current_user.email, purchased_images)
     else:
         purchased_images = set()
-
 
     for obj, score in search_objects:
         obj_data = schemas.SearchObjectSchema.model_validate(obj, from_attributes=True)
@@ -231,22 +230,6 @@ async def delete_object(object_id: int, db: AsyncSession = Depends(database.get_
     await db.delete(obj)
     await db.commit()
     return {"status": "deleted", "object_id": object_id}
-
-
-@app.get("/api/admin/events", response_model=list[schemas.AdminEventSchema])
-async def get_events(db: AsyncSession = Depends(database.get_db), user=Depends(auth.get_current_admin)):
-    result = await db.execute(select(models.AdminEvent).order_by(models.AdminEvent.created_at.desc()))
-    return result.scalars().all()
-
-
-@app.put("/api/admin/events/{id}/resolve")
-async def resolve_event(id: int, db: AsyncSession = Depends(database.get_db), user=Depends(auth.get_current_admin)):
-    event = await db.get(models.AdminEvent, id)
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    event.is_resolved = True
-    await db.commit()
-    return {"status": "resolved"}
 
 
 @app.get("/api/images/{image_id}", response_class=StreamingResponse)
@@ -429,6 +412,26 @@ async def request_access(
         f"📚 Источник: {image.source.source_name if image.source else 'Неизвестен'}",
     ]))
 
+    # Instead of a URL, we now use 'callback_data'. This is a string your bot will receive.
+    # Format: "action:image_id:user_email". Note: callback_data is limited to 64 bytes.
+    callback_data_approve = f"approve:{image.id}:{data.email}"
+    callback_data_deny = f"deny:{image.id}:{data.email}"
+
+    if len(callback_data_approve.encode('utf-8')) > 64 or len(callback_data_deny.encode('utf-8')) > 64:
+        # Handle cases where the data is too long, e.g., by storing the request
+        # in a DB and using a short request ID in the callback_data.
+        logger.error("Callback data is too long.")
+        raise HTTPException(status_code=500, detail="Generated request data is too long for Telegram.")
+
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Разрешить", "callback_data": callback_data_approve},
+                {"text": "❌ Отклонить", "callback_data": callback_data_deny}
+            ]
+        ]
+    }
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
 
     async with httpx.AsyncClient(verify=False) as client:
@@ -437,6 +440,7 @@ async def request_access(
                 "chat_id": TELEGRAM_CHAT_ID,
                 "photo": image.telegram_file_id,
                 "caption": caption,
+                "reply_markup": reply_markup
             }
             response = await client.post(url, json=json)
             logger.info("User %s sent image %s to Telegram chat %s using existing file_id", current_user.email,
@@ -445,6 +449,7 @@ async def request_access(
             payload = {
                 "chat_id": TELEGRAM_CHAT_ID,
                 "caption": caption,
+                "reply_markup": reply_markup
             }
             files = {
                 "photo": ("image.jpg", io.BytesIO(image.image_data), "image/jpeg")
@@ -468,3 +473,104 @@ async def request_access(
         raise HTTPException(status_code=500, detail="Не удалось отправить сообщение в Telegram.")
 
     return {"ok": True}
+
+
+@app.post("/api/admin/access")
+async def handle_access_decision(
+        update: schemas.Update,
+        db: AsyncSession = Depends(database.get_db),
+):
+    if not update.callback_query:
+        # Not a callback, ignore it.
+        return Response(status_code=200)
+
+    callback_query = update.callback_query
+    callback_data = callback_query.data
+    admin_user = callback_query.from_user
+
+    logger.info(f"Received callback from {admin_user.username} ({admin_user.id}): {callback_data}")
+
+    # --- Answer the callback query ---
+    # This is important! It stops the loading icon on the user's button.
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+            json={"callback_query_id": callback_query.id}
+        )
+
+    try:
+        action, image_id_str, user_email = callback_data.split(":", 2)
+        image_id = int(image_id_str)
+    except (ValueError, IndexError) as e:
+        logger.error(f"Could not parse callback_data: '{callback_data}'. Error: {e}")
+        return Response(status_code=400)  # Bad request
+
+    if action == "deny":
+        logger.info(f"Denying access for {user_email} to image {image_id} by admin {admin_user.username}")
+        new_text = f"❌ ДОСТУП ОТКЛОНЕН для {user_email} (админом @{admin_user.username})"
+        await update_access_request(callback_query, new_text)
+        return Response(status_code=200)
+    elif action != "approve":
+        logger.error(f"Unknown action '{action}' in callback_data: '{callback_data}'")
+        return Response(status_code=400)  # Bad request
+
+    # 4. Fetch the User by email
+    user_result = await db.execute(
+        select(models.User).where(models.User.email == user_email)
+    )
+    user_to_grant_access = user_result.scalars().first()
+
+    # 5. Check if ImagePurchase already exists
+    existing_purchase_result = await db.execute(
+        select(models.ImagePurchase).where(
+            models.ImagePurchase.user_id == user_to_grant_access.id,
+            models.ImagePurchase.image_id == image_id
+        )
+    )
+    existing_purchase = existing_purchase_result.scalars().first()
+
+    if existing_purchase:
+        logger.info(
+            f"Image ID: {image_id} already purchased by user ID: {user_to_grant_access.id}. No new purchase record needed.")
+    else:
+        # 6. Create ImagePurchase record
+        new_image_purchase = models.ImagePurchase(
+            user_id=user_to_grant_access.id,
+            image_id=image_id
+        )
+        db.add(new_image_purchase)
+        logger.info(f"Created new ImagePurchase for user ID: {user_to_grant_access.id}, image ID: {image_id}")
+
+    try:
+        await db.commit()
+        logger.info(f"Access granted for image ID: {image_id} to user '{user_to_grant_access.email}'.")
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Database commit failed while handling access granting. Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save changes while resolving event.")
+
+    # 7. Notify the user via Telegram
+    new_text = f"✅ ДОСТУП ПРЕДОСТАВЛЕН для {user_to_grant_access.email} (админом @{admin_user.username})"
+    await update_access_request(callback_query, new_text)
+
+    return Response(status_code=200)
+
+
+async def update_access_request(callback_query, new_text: str):
+    # --- Edit the original message to show the result ---
+    # This provides clear feedback to the admins in the chat.
+    if callback_query.message:
+        original_caption = callback_query.message.caption if callback_query.message.caption else ""
+        updated_caption = f"{original_caption}\n\n---\n{new_text}"
+
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageCaption",
+                json={
+                    "chat_id": callback_query.message.chat.id,
+                    "message_id": callback_query.message.message_id,
+                    "caption": updated_caption,
+                    # We pass an empty inline_keyboard to remove the buttons
+                    "reply_markup": {"inline_keyboard": []}
+                }
+            )
