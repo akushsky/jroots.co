@@ -492,7 +492,7 @@ async def handle_access_decision(
 
     # --- Answer the callback query ---
     # This is important! It stops the loading icon on the user's button.
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         await client.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
             json={"callback_query_id": callback_query.id}
@@ -563,7 +563,7 @@ async def update_access_request(callback_query, new_text: str):
         original_caption = callback_query.message.caption if callback_query.message.caption else ""
         updated_caption = f"{original_caption}\n\n---\n{new_text}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=False) as client:
             await client.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageCaption",
                 json={
