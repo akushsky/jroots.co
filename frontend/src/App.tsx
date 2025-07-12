@@ -2,17 +2,94 @@ import {BrowserRouter as Router, Routes, Route, Navigate} from "react-router-dom
 import {SearchPage} from "./components/SearchPage";
 import AdminLogin from "./components/AdminLogin";
 import AdminDashboard from "./components/AdminDashboard";
-import {Heart, Mail, Info} from "lucide-react";
-import {useState} from "react";
+import {Heart, Mail, Info, X} from "lucide-react";
+import {useEffect, useState} from "react";
 import RegisterForm from "@/components/RegisterForm.tsx";
 import VerifyPage from "@/components/VerifyPage.tsx";
 import LoginForm from "@/components/LoginForm.tsx";
 
+// @ts-ignore
+function WelcomePopup({onClose}) {
+    return (
+        <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+            <div
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 md:p-8 relative text-gray-800">
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors"
+                >
+                    <X className="w-6 h-6"/>
+                </button>
+
+                <h2 className="text-2xl font-bold mb-4 text-center">
+                    Архивный поисковик еврейских материалов
+                </h2>
+
+                <p className="mb-6 text-center text-gray-600">
+                    Добро пожаловать на наш специализированный поисковый ресурс, созданный для
+                    систематизации и поиска разрозненных еврейских архивных материалов!
+                </p>
+
+                <div className="space-y-4">
+                    <div>
+                        <h3 className="font-semibold text-lg mb-2">Что мы делаем:</h3>
+                        <ul className="list-disc list-inside space-y-1 text-gray-700">
+                            <li>
+                                Собираем в единую базу данных еврейские архивные материалы,
+                                разбросанные по интернету
+                            </li>
+                            <li>
+                                Индексируем списки, сканы документов и другие исторические материалы
+                                из групп в Facebook, Telegram и других источников
+                            </li>
+                            <li>
+                                Предоставляем удобный поиск по именам, датам, местам и ключевым
+                                словам
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 className="font-semibold text-lg mb-2">Почему это важно:</h3>
+                        <p className="text-gray-700">
+                            Ценные исторические материалы часто появляются в разных группах и
+                            каналах, но быстро теряются в потоке информации. Наш поисковик
+                            решает эту проблему, делая все материалы доступными для исследователей,
+                            генеалогов и всех интересующихся еврейской историей.
+                        </p>
+                    </div>
+                </div>
+
+                <p className="mt-6 text-center font-medium text-gray-800">
+                    Начните поиск прямо сейчас или поделитесь с нами новыми материалами для
+                    пополнения базы данных!
+                </p>
+            </div>
+        </div>
+    );
+}
+
 function App() {
     const isAuthenticated = () => !!localStorage.getItem("token");
+    const [showWelcome, setShowWelcome] = useState(false);
+
+    useEffect(() => {
+        const hasVisited = localStorage.getItem("hasVisitedSite");
+        if (!hasVisited) {
+            setShowWelcome(true);
+            localStorage.setItem("hasVisitedSite", "true");
+        }
+    }, []);
+
+    const handleClosePopup = () => {
+        setShowWelcome(false);
+    };
 
     return (
         <Router>
+            {showWelcome && <WelcomePopup onClose={handleClosePopup}/>}
+
             <div className="min-h-screen bg-gray-50 py-10">
                 <Routes>
                     <Route path="/" element={<SearchPage/>}/>
