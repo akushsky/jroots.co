@@ -27,16 +27,6 @@ CREATE INDEX idx_search_objects_text_trgm ON search_objects USING GIN (text_cont
 CREATE INDEX idx_images_key_trgm ON images USING GIN (image_key gin_trgm_ops);
 CREATE INDEX idx_images_path_trgm ON images USING GIN (image_path gin_trgm_ops);
 
--- Customer-generated events table
-CREATE TABLE admin_events
-(
-    id          SERIAL PRIMARY KEY,
-    object_id   INT  REFERENCES search_objects (id) ON DELETE SET NULL,
-    message     TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_resolved BOOLEAN   DEFAULT FALSE
-);
-
 -- Images table for storing image data
 CREATE TABLE images
 (
@@ -62,6 +52,8 @@ CREATE TABLE users
     is_verified       BOOLEAN DEFAULT FALSE,
     is_subscribed     BOOLEAN DEFAULT FALSE
 );
+
+CREATE UNIQUE INDEX idx_users_email ON users (email);
 
 -- Table to track user purchases of specific search objects
 CREATE TABLE image_purchases

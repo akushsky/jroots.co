@@ -55,17 +55,6 @@ class SearchObject(Base):
     image = relationship("Image")
 
 
-class AdminEvent(Base):
-    __tablename__ = "admin_events"
-
-    id = Column(Integer, primary_key=True, index=True)
-    object_id = Column(Integer, ForeignKey("search_objects.id", ondelete="SET NULL"))
-    message = Column(Text, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-    is_resolved = Column(Boolean, default=False)
-
-    object = relationship("SearchObject")
-
 class ImagePurchase(Base):
     __tablename__ = "image_purchases"
 

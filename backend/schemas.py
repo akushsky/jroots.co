@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
-from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field
 
 
 class ImageSourceSchema(BaseModel):
@@ -31,17 +32,6 @@ class SearchObjectSchema(BaseModel):
     image_id: int | None = None
     thumbnail_url: str | None = None
     similarity_score: int | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class AdminEventSchema(BaseModel):
-    id: int
-    object_id: int | None
-    message: str
-    created_at: datetime
-    is_resolved: bool
 
     class Config:
         from_attributes = True
@@ -82,3 +72,26 @@ class AccessRequest(BaseModel):
 
     class Config:
         from_attributes = True
+
+class TelegramUser(BaseModel):
+    id: int
+    first_name: str
+    username: Optional[str] = None
+
+class Chat(BaseModel):
+    id: int
+    type: str
+
+class Message(BaseModel):
+    message_id: int
+    chat: Chat
+
+class CallbackQuery(BaseModel):
+    id: str
+    from_user: TelegramUser = Field(..., alias="from")
+    message: Optional[Message] = None
+    data: Optional[str] = None
+
+class Update(BaseModel):
+    update_id: int
+    callback_query: Optional[CallbackQuery] = None
