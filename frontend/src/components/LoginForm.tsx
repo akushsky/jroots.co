@@ -3,7 +3,7 @@ import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {userLogin} from "@/api/api.ts";
-import {useNavigate} from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 export default function LoginForm() {
     const [email, setEmail] = useState("");
@@ -57,6 +57,12 @@ export default function LoginForm() {
                             Войти
                         </Button>
                     </form>
+                    <p className="text-center text-sm text-gray-600">
+                        Нет аккаунта?{" "}
+                        <Link to="/signup" className="font-semibold text-indigo-600 hover:underline">
+                            Зарегистрироваться
+                        </Link>
+                    </p>
                 </CardContent>
             </Card>
         </div>
