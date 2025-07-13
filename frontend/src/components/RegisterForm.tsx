@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import {userRegister} from "@/api/api.ts";
+import { Link } from "react-router-dom";
 
 export default function RegisterForm() {
     const [email, setEmail] = useState("");
@@ -105,6 +106,12 @@ export default function RegisterForm() {
                             Зарегистрироваться
                         </Button>
                     </form>
+                    <p className="text-center text-sm text-gray-600">
+                        Уже есть аккаунт?{" "}
+                        <Link to="/login" className="font-semibold text-indigo-600 hover:underline">
+                            Войти
+                        </Link>
+                    </p>
                 </CardContent>
             </Card>
         </div>
