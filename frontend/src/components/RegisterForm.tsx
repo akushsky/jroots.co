@@ -1,10 +1,10 @@
-import { useState, useRef } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {useState, useRef} from "react";
+import {Input} from "@/components/ui/input";
+import {Button} from "@/components/ui/button";
+import {Card, CardContent} from "@/components/ui/card";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import {userRegister} from "@/api/api.ts";
-import { Link } from "react-router-dom";
+import {Link} from "react-router-dom";
 
 export default function RegisterForm() {
     const [email, setEmail] = useState("");
@@ -69,43 +69,45 @@ export default function RegisterForm() {
                             {errorMessage}
                         </div>
                     )}
-                    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-                        <Input
-                            type="text"
-                            placeholder="Имя"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            required
-                        />
-                        <Input
-                            type="email"
-                            placeholder="Email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
-                        <Input
-                            type="password"
-                            placeholder="Пароль"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
-                        <Input
-                            type="text"
-                            placeholder="Telegram (необязательно)"
-                            value={telegramUsername}
-                            onChange={(e) => setTelegramUsername(e.target.value)}
-                        />
-                        <HCaptcha
-                            sitekey="0a40b9c4-3a0a-4438-b590-05e697d46740"
-                            onVerify={(token) => setCaptchaToken(token)}
-                            ref={captchaRef}
-                        />
-                        <Button type="submit" className="w-full">
-                            Зарегистрироваться
-                        </Button>
-                    </form>
+                    {!successMessage && (
+                        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                            <Input
+                                type="text"
+                                placeholder="Имя"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                required
+                            />
+                            <Input
+                                type="email"
+                                placeholder="Email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                            <Input
+                                type="password"
+                                placeholder="Пароль"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                            <Input
+                                type="text"
+                                placeholder="Telegram (необязательно)"
+                                value={telegramUsername}
+                                onChange={(e) => setTelegramUsername(e.target.value)}
+                            />
+                            <HCaptcha
+                                sitekey="0a40b9c4-3a0a-4438-b590-05e697d46740"
+                                onVerify={(token) => setCaptchaToken(token)}
+                                ref={captchaRef}
+                            />
+                            <Button type="submit" className="w-full">
+                                Зарегистрироваться
+                            </Button>
+                        </form>
+                    )}
                     <p className="text-center text-sm text-gray-600">
                         Уже есть аккаунт?{" "}
                         <Link to="/login" className="font-semibold text-indigo-600 hover:underline">
