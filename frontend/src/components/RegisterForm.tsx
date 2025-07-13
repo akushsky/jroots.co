@@ -58,6 +58,12 @@ export default function RegisterForm() {
         <div className="max-w-md mx-auto mt-16">
             <Card>
                 <CardContent className="p-6 space-y-4">
+                    <div className="text-center">
+                        <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+                            ← На главную
+                        </Link>
+                    </div>
+
                     <h2 className="text-xl font-semibold text-center">Регистрация</h2>
                     {successMessage && (
                         <div className="bg-green-100 text-green-800 px-4 py-2 rounded text-sm">
