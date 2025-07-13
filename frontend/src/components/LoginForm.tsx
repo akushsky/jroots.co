@@ -32,6 +32,12 @@ export default function LoginForm() {
         <div className="max-w-md mx-auto mt-16">
             <Card>
                 <CardContent className="p-6 space-y-4">
+                    <div className="text-center">
+                        <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+                            ← На главную
+                        </Link>
+                    </div>
+
                     <h2 className="text-xl font-semibold text-center">Вход</h2>
                     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                         <Input
