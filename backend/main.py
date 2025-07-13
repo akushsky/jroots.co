@@ -3,6 +3,7 @@ import traceback
 from os import getenv
 from typing import Optional
 
+import json
 import httpx
 import schemas
 from PIL import Image, ImageOps
@@ -436,20 +437,22 @@ async def request_access(
 
     async with httpx.AsyncClient(verify=False) as client:
         if image.telegram_file_id:
-            json = {
+            json_request = {
                 "chat_id": TELEGRAM_CHAT_ID,
                 "photo": image.telegram_file_id,
                 "caption": caption,
                 "reply_markup": reply_markup
             }
-            response = await client.post(url, json=json)
+            response = await client.post(url, json=json_request)
             logger.info("User %s sent image %s to Telegram chat %s using existing file_id", current_user.email,
                         image.id, TELEGRAM_CHAT_ID)
         else:
+            # Convert the reply_markup dictionary to a JSON string
+            serialized_reply_markup = json.dumps(reply_markup)
             payload = {
                 "chat_id": TELEGRAM_CHAT_ID,
                 "caption": caption,
-                "reply_markup": reply_markup
+                "reply_markup": serialized_reply_markup
             }
             files = {
                 "photo": ("image.jpg", io.BytesIO(image.image_data), "image/jpeg")
