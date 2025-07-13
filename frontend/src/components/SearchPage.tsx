@@ -255,7 +255,7 @@ export function SearchPage() {
                                     ) : (
                                         <TooltipProvider>
                                             <Tooltip>
-                                                <TooltipTrigger asChild>
+                                                <TooltipTrigger asChild className="cursor-pointer">
                                                     <Button
                                                         variant="secondary"
                                                         size="sm"
