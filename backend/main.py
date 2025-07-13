@@ -13,6 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette import status
 from starlette.responses import StreamingResponse, Response
 
 import auth
@@ -149,12 +150,22 @@ async def create_image(image_path: str = Form(...), image_key: str = Form(...),
 
 @app.post("/api/admin/objects", response_model=schemas.SearchObjectSchema)
 async def create_object(text_content: str = Form(...),
-                        price: int = Form(...), image_path: str = Form(...),
-                        image_key: str = Form(...), image_source_id: Optional[int] = Form(None),
+                        price: int = Form(...), image_path: Optional[str] = Form(None),
+                        image_key: Optional[str] = Form(None), image_source_id: Optional[int] = Form(None),
                         image_file: Optional[UploadFile] = File(None),
                         image_file_sha512: Optional[str] = Form(None),
                         db: AsyncSession = Depends(database.get_db),
                         user=Depends(auth.get_current_admin)):
+    # Check if we have an existing image OR a new one.
+    has_existing_image = image_file_sha512 is not None
+    has_new_image_data = image_path is not None and image_key is not None
+
+    if not has_existing_image and not has_new_image_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Request is invalid. You must provide either an 'image_file_sha512' OR both 'image_path' and 'image_key'."
+        )
+
     image = await create_image(image_path, image_key, image_source_id, image_file, image_file_sha512, db, user)
     return await crud.create_search_object(db, text_content, price, image.id)
 
