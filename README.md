@@ -38,7 +38,9 @@ Jewish genealogy archive search platform. Aggregates scattered archival material
 ├── db/
 │   ├── init.sql              # Database schema
 │   └── docker-compose.yaml   # Local PostgreSQL
-├── cli/                      # Bulk upload CLI tool
+├── cli/                      # CLI tools (installable package)
+│   ├── jroots_cli/           # Package source
+│   └── pyproject.toml
 ├── docker-compose.prod.yml   # Production deployment
 └── .github/workflows/ci.yml  # CI pipeline
 ```
@@ -83,6 +85,48 @@ cd backend
 poetry run pytest tests/ -v
 ```
 
+### CLI Tools
+
+```bash
+cd cli
+pip install -e .
+```
+
+The CLI installs as the `jroots` command. All commands accept `--api-url` (or `JROOTS_API_URL`) and `--token` (or `JROOTS_API_TOKEN`) options.
+
+**Login and get a token:**
+
+```bash
+jroots login admin
+export JROOTS_API_TOKEN=<token from output>
+```
+
+**Validate CSVs before uploading:**
+
+```bash
+jroots validate --images-csv images.csv --objects-csv objects.csv
+```
+
+**Upload images and search objects:**
+
+```bash
+# Upload everything at once
+jroots upload-all --images-csv images.csv --objects-csv objects.csv
+
+# Or upload separately
+jroots upload-images --csv images.csv
+jroots upload-objects --csv objects.csv --images-csv images.csv
+
+# Preview with --dry-run
+jroots upload-all --images-csv images.csv --objects-csv objects.csv --dry-run
+```
+
+**Check API connectivity:**
+
+```bash
+jroots status
+```
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -98,6 +142,8 @@ poetry run pytest tests/ -v
 | `HCAPTCHA_SECRET_KEY` | No | hCaptcha verification key |
 | `RESEND_API_KEY` | No | Resend email API key |
 | `MEDIA_PATH` | No | Path for image storage (default: /app/media) |
+| `JROOTS_API_URL` | No | API base URL for CLI (default: http://localhost:8000) |
+| `JROOTS_API_TOKEN` | No | Bearer token for CLI authentication |
 
 ## Deployment
 
