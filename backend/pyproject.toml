@@ -29,7 +29,7 @@ alembic = "^1.13.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
 pytest-asyncio = "^0.23.0"
-ruff = "^0.0.292"
+ruff = ">=0.8.0"
 mypy = "^1.5.0"
 pre-commit = "^3.0.0"
 black = "^24.2.0"
@@ -38,6 +38,14 @@ respx = "^0.22.0"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E402"]
 
 [tool.pytest.ini_options]
 pythonpath = "."
