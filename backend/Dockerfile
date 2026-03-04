@@ -7,7 +7,7 @@ COPY ./backend/pyproject.toml ./
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry \
+RUN pip install --no-cache-dir "poetry>=1.8,<2" \
     && poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-dev
 
