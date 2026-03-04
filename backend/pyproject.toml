@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jroots-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Backend for Jewish OCR Search"
 authors = ["Michael Akushsky <michael.akushsky@gmail.com>"]
 package-mode = false
@@ -23,6 +23,7 @@ certifi = "^2024.9.14"
 python-logging-loki = "^0.3.1"
 python-json-logger = "^3.3.0"
 colorlog = "^6.7.0"
+alembic = "^1.13.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
@@ -39,4 +40,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 pythonpath = "."
-
+asyncio_mode = "auto"

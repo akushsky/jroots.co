@@ -6,9 +6,9 @@ services:
     container_name: jroots.co_db
     restart: always
     environment:
-      POSTGRES_USER: jroots
-      POSTGRES_PASSWORD: 3EQKw4PDoHJzUmu
-      POSTGRES_DB: jroots.co
+      POSTGRES_USER: ${POSTGRES_USER:-jroots}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-jroots.co}
     ports:
       - "5432:5432"
     volumes:
@@ -17,4 +17,3 @@ services:
 
 volumes:
   db-data:
-

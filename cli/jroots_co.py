@@ -8,8 +8,7 @@ import click
 import requests
 from tqdm import tqdm
 
-# --- Configuration ---
-API_BASE = os.getenv("JROOTS_API", "http://localhost:5173")
+API_BASE = os.getenv("JROOTS_API_URL", "http://localhost:5173")
 TOKEN = os.getenv("JROOTS_API_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
 
@@ -49,7 +48,7 @@ def calculate_sha512(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def process_images(images_csv: str, main_pbar: tqdm) -> (dict, Reporter):
+def process_images(images_csv: str, main_pbar: tqdm) -> tuple[dict, Reporter]:
     """Processes and uploads images from a CSV file."""
     image_map = {}
     reporter = Reporter()
@@ -79,7 +78,7 @@ def process_images(images_csv: str, main_pbar: tqdm) -> (dict, Reporter):
             try:
                 with open(path, "rb") as image_file:
                     files = {"image_file": image_file}
-                    response = requests.post(f"{API_BASE}/api/admin/images", files=files, data=data, headers=HEADERS)
+                    response = requests.post(f"{API_BASE}/api/admin/images", files=files, data=data, headers=HEADERS, verify=False)
                     response.raise_for_status()
 
                 image_map[str(path)] = sha512
@@ -117,7 +116,7 @@ def process_objects(objects_csv: str, image_map: dict, main_pbar: tqdm) -> Repor
                 "price": row['price'],
             }
             try:
-                response = requests.post(f"{API_BASE}/api/admin/objects", data=data, headers=HEADERS)
+                response = requests.post(f"{API_BASE}/api/admin/objects", data=data, headers=HEADERS, verify=False)
                 response.raise_for_status()
                 reporter.add_success()
             except requests.RequestException as e:
@@ -176,7 +175,7 @@ def login(api_url, username):
         password = click.prompt("Password", hide_input=True, err=True)
         login_url = f"{API_BASE}/api/login"
         click.echo(f"Attempting to log in {username} at {API_BASE}...", err=True)
-        response = requests.post(login_url, data={"username": username, "password": password}, timeout=10)
+        response = requests.post(login_url, data={"username": username, "password": password}, timeout=10, verify=False)
         response.raise_for_status()
 
         token = response.json().get("access_token")

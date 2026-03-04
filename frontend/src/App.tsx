@@ -1,25 +1,38 @@
-import {BrowserRouter as Router, Routes, Route, Navigate} from "react-router-dom";
-import {SearchPage} from "./components/SearchPage";
-import AdminLogin from "./components/AdminLogin";
-import AdminDashboard from "./components/AdminDashboard";
-import {Heart, Mail, Info, X} from "lucide-react";
-import {useEffect, useState} from "react";
-import RegisterForm from "@/components/RegisterForm.tsx";
-import VerifyPage from "@/components/VerifyPage.tsx";
-import LoginForm from "@/components/LoginForm.tsx";
+import {lazy, Suspense, useEffect, useState} from "react";
+import {BrowserRouter as Router, Navigate, Route, Routes} from "react-router-dom";
+import {Heart, Info, Mail, X} from "lucide-react";
+import {AuthProvider} from "@/contexts/AuthContext";
+import {useAuth} from "@/hooks/useAuth";
 
-// @ts-ignore
-function WelcomePopup({onClose}) {
+const SearchPage = lazy(() => import("@/components/SearchPage"));
+const AdminLogin = lazy(() => import("@/components/AdminLogin"));
+const AdminDashboard = lazy(() => import("@/components/AdminDashboard"));
+const RegisterForm = lazy(() => import("@/components/RegisterForm"));
+const VerifyPage = lazy(() => import("@/components/VerifyPage"));
+const LoginForm = lazy(() => import("@/components/LoginForm"));
+
+function PageFallback() {
     return (
-        <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-start sm:items-center z-50 p-4 py-8 overflow-y-auto">
-            <div
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 md:p-8 relative text-gray-800 overflow-y-auto max-h-full">
+        <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-900 border-t-transparent" />
+        </div>
+    );
+}
+
+interface WelcomePopupProps {
+    onClose: () => void;
+}
+
+function WelcomePopup({onClose}: WelcomePopupProps) {
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-start sm:items-center z-50 p-4 py-8 overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 md:p-8 relative text-gray-800 overflow-y-auto max-h-full">
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors z-10"
+                    aria-label="Закрыть"
                 >
-                    <X className="w-6 h-6"/>
+                    <X className="w-6 h-6" />
                 </button>
 
                 <h2 className="text-2xl font-bold mb-4 text-center">
@@ -35,43 +48,52 @@ function WelcomePopup({onClose}) {
                     <div>
                         <h3 className="font-semibold text-lg mb-2">Что мы делаем:</h3>
                         <ul className="list-disc list-inside space-y-1 text-gray-700">
-                            <li>
-                                Собираем в единую базу данных еврейские архивные материалы,
-                                разбросанные по интернету
-                            </li>
-                            <li>
-                                Индексируем списки, сканы документов и другие исторические материалы
-                                из групп в Facebook, Telegram и других источников
-                            </li>
-                            <li>
-                                Предоставляем удобный поиск по именам, датам, местам и ключевым
-                                словам
-                            </li>
+                            <li>Собираем в единую базу данных еврейские архивные материалы, разбросанные по интернету</li>
+                            <li>Индексируем списки, сканы документов и другие исторические материалы из групп в Facebook, Telegram и других источников</li>
+                            <li>Предоставляем удобный поиск по именам, датам, местам и ключевым словам</li>
                         </ul>
                     </div>
 
                     <div>
                         <h3 className="font-semibold text-lg mb-2">Почему это важно:</h3>
                         <p className="text-gray-700">
-                            Ценные исторические материалы часто появляются в разных группах и
-                            каналах, но быстро теряются в потоке информации. Наш поисковик
-                            решает эту проблему, делая все материалы доступными для исследователей,
-                            генеалогов и всех интересующихся еврейской историей.
+                            Ценные исторические материалы часто появляются в разных группах и каналах, но быстро
+                            теряются в потоке информации. Наш поисковик решает эту проблему, делая все материалы
+                            доступными для исследователей, генеалогов и всех интересующихся еврейской историей.
                         </p>
                     </div>
                 </div>
 
                 <p className="mt-6 text-center font-medium text-gray-800">
-                    Начните поиск прямо сейчас или поделитесь с нами новыми материалами для
-                    пополнения базы данных!
+                    Начните поиск прямо сейчас или поделитесь с нами новыми материалами для пополнения базы данных!
                 </p>
             </div>
         </div>
     );
 }
 
-function App() {
-    const isAuthenticated = () => !!localStorage.getItem("token");
+function ProtectedAdminRoute() {
+    const {isAuthenticated, user} = useAuth();
+    if (!isAuthenticated) return <Navigate to="/admin/login" />;
+    if (!user?.is_admin) return <Navigate to="/" />;
+    return (
+        <Suspense fallback={<PageFallback />}>
+            <AdminDashboard />
+        </Suspense>
+    );
+}
+
+function NotFound() {
+    return (
+        <div className="max-w-md mx-auto mt-20 text-center">
+            <h1 className="text-4xl font-bold mb-4">404</h1>
+            <p className="text-gray-600 mb-4">Страница не найдена</p>
+            <a href="/" className="text-indigo-600 hover:underline">На главную</a>
+        </div>
+    );
+}
+
+function AppRoutes() {
     const [showWelcome, setShowWelcome] = useState(false);
 
     useEffect(() => {
@@ -82,29 +104,34 @@ function App() {
         }
     }, []);
 
-    const handleClosePopup = () => {
-        setShowWelcome(false);
-    };
+    return (
+        <>
+            {showWelcome && <WelcomePopup onClose={() => setShowWelcome(false)} />}
+            <div className="min-h-screen bg-gray-50 py-10">
+                <Suspense fallback={<PageFallback />}>
+                    <Routes>
+                        <Route path="/" element={<SearchPage />} />
+                        <Route path="/admin/login" element={<AdminLogin />} />
+                        <Route path="/signup" element={<RegisterForm />} />
+                        <Route path="/verify" element={<VerifyPage />} />
+                        <Route path="/login" element={<LoginForm />} />
+                        <Route path="/admin/dashboard" element={<ProtectedAdminRoute />} />
+                        <Route path="*" element={<NotFound />} />
+                    </Routes>
+                </Suspense>
+            </div>
+            <AboutBlock />
+            <DonationButton />
+        </>
+    );
+}
 
+function App() {
     return (
         <Router>
-            {showWelcome && <WelcomePopup onClose={handleClosePopup}/>}
-
-            <div className="min-h-screen bg-gray-50 py-10">
-                <Routes>
-                    <Route path="/" element={<SearchPage/>}/>
-                    <Route path="/admin/login" element={<AdminLogin/>}/>
-                    <Route path="/signup" element={<RegisterForm/>}/>
-                    <Route path="/verify" element={<VerifyPage/>}/>
-                    <Route path="/login" element={<LoginForm/>}/>
-                    <Route
-                        path="/admin/dashboard"
-                        element={isAuthenticated() ? <AdminDashboard/> : <Navigate to="/admin/login"/>}
-                    />
-                </Routes>
-            </div>
-            <AboutBlock/>
-            <DonationButton/>
+            <AuthProvider>
+                <AppRoutes />
+            </AuthProvider>
         </Router>
     );
 }
@@ -118,7 +145,7 @@ function DonationButton() {
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold rounded-full shadow-lg transition-all"
             >
-                <Heart className="w-4 h-4 fill-red-600 text-red-600"/>
+                <Heart className="w-4 h-4 fill-red-600 text-red-600" />
                 Гешэфт
             </a>
         </div>
@@ -130,44 +157,35 @@ function AboutBlock() {
 
     return (
         <div className="fixed bottom-4 left-4 z-50 text-sm text-gray-300">
-            {/* Mobile collapse button */}
             <button
                 onClick={() => setExpanded((prev) => !prev)}
                 className="sm:hidden bg-black/60 backdrop-blur p-2 rounded-full shadow-md"
+                aria-label="Информация о сайте"
+                aria-expanded={expanded}
             >
-                <Info className="w-4 h-4 text-white"/>
+                <Info className="w-4 h-4 text-white" />
             </button>
 
-            {/* Main content block (hidden on small unless expanded) */}
             <div
-                className={`${
-                    expanded ? "block" : "hidden"
-                } sm:flex flex-col gap-1 mt-2 sm:mt-0 bg-black/60 backdrop-blur px-4 py-2 rounded-xl shadow-md text-gray-300`}
+                className={`${expanded ? "block" : "hidden"} sm:flex flex-col gap-1 mt-2 sm:mt-0 bg-black/60 backdrop-blur px-4 py-2 rounded-xl shadow-md text-gray-300`}
             >
-                {/* Line 1: Title with Star of David */}
                 <div className="flex items-center justify-center gap-2">
                     <span>Я знаю, чего хочет консул. А также — где это найти.</span>
                 </div>
 
-                {/* Line 2: Links */}
                 <div className="flex flex-wrap gap-4 mt-1 items-center text-sm">
-                    <div className="flex items-center gap-1 hover:text-white transition">
-                        <a
-                            href="https://t.me/namelles_one"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-gray-200 hover:text-white underline underline-offset-2 transition"
-                        >
-                            @Namelles_One
-                        </a>
-                    </div>
+                    <a
+                        href="https://t.me/namelles_one"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-200 hover:text-white underline underline-offset-2 transition"
+                    >
+                        @Namelles_One
+                    </a>
 
                     <div className="flex items-center gap-1 hover:text-white transition">
-                        <Mail className="w-4 h-4"/>
-                        <a
-                            href="mailto:michael.akushsky@gmail.com"
-                            className="hover:underline"
-                        >
+                        <Mail className="w-4 h-4" />
+                        <a href="mailto:michael.akushsky@gmail.com" className="hover:underline">
                             michael.akushsky@gmail.com
                         </a>
                     </div>

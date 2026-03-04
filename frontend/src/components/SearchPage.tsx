@@ -1,14 +1,15 @@
+import {useCallback, useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
-import {jwtDecode} from "jwt-decode"; // we’ll need to install this
-import {useEffect, useState} from "react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
-import {clearImageCache, fetchImage, requestAccess, searchObjects, validateToken} from "../api/api";
+import {Button} from "@/components/ui/button";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
 import Highlighter from "react-highlight-words";
-import {Button} from "@/components/ui/button.tsx";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip.tsx";
-import {getPaginationPages} from "@/api/paginate.ts";
-import {User} from "@/components/User.tsx";
+import {fetchImage, requestAccess, searchObjects} from "@/api/api";
+import {useAuth} from "@/hooks/useAuth";
+import {ImagePopup} from "@/components/shared/ImagePopup";
+import {LoadingOverlay} from "@/components/shared/LoadingOverlay";
+import {Pagination} from "@/components/shared/Pagination";
 
 interface ImageSource {
     id: number;
@@ -21,43 +22,44 @@ interface SearchResult {
     price: number;
     image_id: number;
     thumbnail_url: string;
-    image_path: string;
     similarity_score: number;
-    image: { image_key: string, image_path: string, source: ImageSource, sha512_hash: string };
+    image: {
+        id: number;
+        image_key: string;
+        image_path: string;
+        source: ImageSource | null;
+        sha512_hash: string;
+    } | null;
     requested?: boolean;
 }
 
-export function SearchPage() {
+export default function SearchPage() {
     const navigate = useNavigate();
-    const [user, setUser] = useState<User | null>(null);
+    const {user, logout} = useAuth();
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
     const [isLoadingPopup, setIsLoadingPopup] = useState(false);
-    const [isZoomed, setIsZoomed] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
     const pageSize = 20;
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const sendRequestAccess = async (result: SearchResult) => {
         if (!user) {
             setSuccessMessage("Пожалуйста, войдите, чтобы отправить запрос.");
+            setTimeout(() => setSuccessMessage(null), 5000);
             return;
         }
 
         try {
-            await requestAccess(user.username, user.email, result.image_id, result.text_content);
+            await requestAccess(result.image_id, result.text_content);
             setSuccessMessage("Запрос успешно отправлен администратору.");
-
-            // ✅ Update local state to mark the result as requested
             setResults((prev) =>
-                prev.map((r) =>
-                    r.id === result.id ? {...r, requested: true} : r
-                )
+                prev.map((r) => (r.id === result.id ? {...r, requested: true} : r)),
             );
-        } catch (e) {
+        } catch {
             setSuccessMessage("Произошла ошибка при отправке запроса.");
         }
 
@@ -69,131 +71,82 @@ export function SearchPage() {
     }, [query]);
 
     useEffect(() => {
-        const token = localStorage.getItem("token");
-        if (token) {
-            try {
-                const decoded: any = jwtDecode(token);
-
-                const now = Math.floor(Date.now() / 1000); // current time in seconds
-                if (decoded.exp && decoded.exp < now) {
-                    // Token is expired
-                    setUser(null);
-                    localStorage.removeItem("token");
-                } else {
-                    // Token is valid
-                    setUser({email: decoded.sub, username: decoded.username, is_verified: decoded.is_verified});
-                }
-            } catch (e) {
-                setUser(null);
-                localStorage.removeItem("token");
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setPopupImage(null);
-                setIsZoomed(false);
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, []);
-
-    useEffect(() => {
         const delay = setTimeout(async () => {
             if (query.trim()) {
-                const res = await searchObjects(query, page, pageSize);
-                setResults(res.items);
-                setTotal(res.total);
+                abortControllerRef.current?.abort();
+                const controller = new AbortController();
+                abortControllerRef.current = controller;
+
+                try {
+                    const res = await searchObjects(query, page, pageSize, controller.signal);
+                    setResults(res.items);
+                    setTotal(res.total);
+                } catch (err: unknown) {
+                    if (err instanceof Error && err.name !== "CanceledError") {
+                        setResults([]);
+                        setTotal(0);
+                    }
+                }
             } else {
                 setResults([]);
-                setTotal(0)
+                setTotal(0);
             }
         }, 300);
 
         return () => clearTimeout(delay);
     }, [query, page]);
 
-    useEffect(() => {
-        const validUser = validateToken();
-        setUser(validUser);
-    }, []);
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const validUser = validateToken();
-            setUser(validUser);
-            if (!validUser) {
-                navigate("/login");
-            }
-        }, 60 * 1000); // check every 60 seconds
-
-        return () => clearInterval(interval);
-    }, []);
+    const handleImageClick = useCallback(
+        async (imageId: number) => {
+            if (!user?.is_verified) return;
+            setIsLoadingPopup(true);
+            const blobUrl = await fetchImage(imageId);
+            if (blobUrl) setPopupImage(blobUrl);
+            setIsLoadingPopup(false);
+        },
+        [user],
+    );
 
     const pageCount = Math.ceil(total / pageSize);
-    const visiblePages = getPaginationPages(page, pageCount);
 
     return (
-        <div className="max-w-3xl mx-auto mt-10">
-            <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
-                <h1 className="text-xl font-semibold">Ревизия внезапных евреев</h1>
-                {user ? (
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                        <div className="text-right leading-tight">
-                            <div className="text-xs text-gray-500">Вы вошли как</div>
-                            <div className="font-medium">{user.username}</div>
-                            <div className="text-xs">{user.email}</div>
+        <TooltipProvider>
+            <div className="max-w-3xl mx-auto mt-10">
+                <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
+                    <h1 className="text-xl font-semibold">Ревизия внезапных евреев</h1>
+                    {user ? (
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                            <div className="text-right leading-tight">
+                                <div className="text-xs text-gray-500">Вы вошли как</div>
+                                <div className="font-medium">{user.username}</div>
+                                <div className="text-xs">{user.email}</div>
+                            </div>
+                            <Button variant="outline" onClick={logout}>
+                                Выйти
+                            </Button>
                         </div>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                clearImageCache();
-                                localStorage.removeItem("token");
-                                setUser(null);
-                            }}
-                        >
-                            Выйти
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => navigate("/login")}>Вход</Button>
-                        <Button onClick={() => navigate("/signup")}>Регистрация</Button>
-                    </div>
-                )}
-            </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => navigate("/login")}>Вход</Button>
+                            <Button onClick={() => navigate("/signup")}>Регистрация</Button>
+                        </div>
+                    )}
+                </div>
 
-            <Input
-                placeholder="Поиск..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-            />
+                <Input placeholder="Поиск..." value={query} onChange={(e) => setQuery(e.target.value)} />
 
-            <div className="mt-6 grid gap-4">
-                {results.map((result) => (
-                    <Card key={result.id}>
-                        <div className="relative">
-                            <CardContent className="flex gap-4 items-center p-4">
-                                <TooltipProvider>
+                <div className="mt-6 grid gap-4">
+                    {results.map((result) => (
+                        <Card key={result.id}>
+                            <div className="relative">
+                                <CardContent className="flex gap-4 items-center p-4">
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <img
-                                                src={`${result.thumbnail_url}`}
-                                                alt="result"
-                                                className={`w-20 h-20 object-cover rounded cursor-pointer ${user?.is_verified ? '' : 'opacity-60'}`}
-                                                onClick={async () => {
-                                                    if (user && user.is_verified) {
-                                                        setIsLoadingPopup(true);  // Start loading
-                                                        const blobUrl = await fetchImage(result.image_id);
-                                                        if (blobUrl) {
-                                                            setPopupImage(blobUrl);
-                                                        }
-                                                        setIsLoadingPopup(false); // Stop loading
-                                                    }
-                                                }}
+                                                src={result.thumbnail_url}
+                                                alt={result.text_content}
+                                                className={`w-20 h-20 object-cover rounded cursor-pointer ${user?.is_verified ? "" : "opacity-60"}`}
+                                                onClick={() => result.image_id && handleImageClick(result.image_id)}
                                             />
                                         </TooltipTrigger>
                                         {!user ? (
@@ -206,22 +159,19 @@ export function SearchPage() {
                                             </TooltipContent>
                                         ) : null}
                                     </Tooltip>
-                                </TooltipProvider>
-                                <div>
-                                    <p>
-                                        <Highlighter
-                                            searchWords={[query]}
-                                            autoEscape
-                                            textToHighlight={result.text_content}
-                                        />
-                                    </p>
-                                    <div className="text-sm text-muted-foreground">
-                                        {result.image?.image_path === "********" ? (
-                                            <TooltipProvider>
+                                    <div>
+                                        <p>
+                                            <Highlighter
+                                                searchWords={[query]}
+                                                autoEscape
+                                                textToHighlight={result.text_content}
+                                            />
+                                        </p>
+                                        <div className="text-sm text-muted-foreground">
+                                            {result.image?.image_path === "********" ? (
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
-                                                        <span
-                                                            className="italic cursor-help underline decoration-dotted mr-1">
+                                                        <span className="italic cursor-help underline decoration-dotted mr-1">
                                                             Шифр дела скрыт
                                                         </span>
                                                     </TooltipTrigger>
@@ -229,31 +179,28 @@ export function SearchPage() {
                                                         <p>Купите доступ к этой записи, чтобы увидеть шифр</p>
                                                     </TooltipContent>
                                                 </Tooltip>
-                                            </TooltipProvider>
-                                        ) : (
+                                            ) : (
+                                                <Highlighter
+                                                    searchWords={[query]}
+                                                    autoEscape
+                                                    textToHighlight={(result.image?.image_path ?? "") + " "}
+                                                />
+                                            )}
                                             <Highlighter
                                                 searchWords={[query]}
                                                 autoEscape
-                                                textToHighlight={result.image.image_path + " "}
+                                                textToHighlight={`(${result.image?.source?.source_name ?? ""}) ${result.image?.image_key ?? ""}`}
                                             />
-                                        )}
-                                        <Highlighter
-                                            searchWords={[query]}
-                                            autoEscape
-                                            textToHighlight={`(${result.image?.source?.source_name}) ${result.image?.image_key}`}
-                                        />
-                                    </div>
-                                </div>
-                            </CardContent>
-                            {result.price !== undefined && (
-                                <div className="absolute top-2 right-2 z-10">
-                                    {result.requested ? (
-                                        <div
-                                            className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
-                                            ✅ Запрос отправлен
                                         </div>
-                                    ) : (
-                                        <TooltipProvider>
+                                    </div>
+                                </CardContent>
+                                {result.price !== undefined && (
+                                    <div className="absolute top-2 right-2 z-10">
+                                        {result.requested ? (
+                                            <div className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
+                                                Запрос отправлен
+                                            </div>
+                                        ) : (
                                             <Tooltip>
                                                 <TooltipTrigger asChild className="cursor-pointer">
                                                     <Button
@@ -262,102 +209,41 @@ export function SearchPage() {
                                                         className="text-xs px-2 py-1 h-auto rounded-full shadow"
                                                         onClick={() => sendRequestAccess(result)}
                                                     >
-                                                        <span
-                                                            className="hidden md:inline">€{(result.price / 100).toFixed(2)}</span>
-                                                        <span
-                                                            className="inline md:hidden">Запросить за €{(result.price / 100).toFixed(2)}</span>
+                                                        <span className="hidden md:inline">
+                                                            &euro;{(result.price / 100).toFixed(2)}
+                                                        </span>
+                                                        <span className="inline md:hidden">
+                                                            Запросить за &euro;{(result.price / 100).toFixed(2)}
+                                                        </span>
                                                     </Button>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
                                                     <p>Нажмите, чтобы отправить запрос на доступ</p>
                                                 </TooltipContent>
                                             </Tooltip>
-                                        </TooltipProvider>
-                                    )}
-                                </div>
-                            )}
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
+                    ))}
+
+                    {results.length === 0 && query.trim() && (
+                        <div className="text-center text-gray-500 py-6">
+                            Нет результатов по запросу &laquo;{query}&raquo;
                         </div>
-                    </Card>
-                ))}
-
-                {results.length === 0 && query.trim() && (
-                    <div className="text-center text-gray-500 py-6">
-                        Нет результатов по запросу «{query}»
-                    </div>
-                )}
-
-                <div className="flex justify-center gap-2 mt-4 flex-wrap">
-                    {visiblePages.map((p, idx) =>
-                        p === 'ellipsis' ? (
-                            <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">…</span>
-                        ) : (
-                            <Button
-                                key={p}
-                                variant={p === page ? "default" : "outline"}
-                                onClick={() => setPage(p)}
-                            >
-                                {p + 1}
-                            </Button>
-                        )
                     )}
+
+                    <Pagination page={page} totalPages={pageCount} onPageChange={setPage} />
                 </div>
+
+                {isLoadingPopup && <LoadingOverlay message="Загрузка изображения..." />}
+                <ImagePopup imageUrl={popupImage} onClose={() => setPopupImage(null)} />
+
+                {successMessage && (
+                    <div className="text-green-600 text-center font-medium mt-4">{successMessage}</div>
+                )}
             </div>
-            {isLoadingPopup && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
-                    <div
-                        className="animate-spin rounded-full h-16 w-16 border-4 border-white border-t-transparent mb-4"></div>
-                    <p className="text-white text-lg">Загрузка изображения...</p>
-                </div>
-            )}
-
-            {popupImage && (
-                <div
-                    className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
-                    onClick={() => {
-                        setPopupImage(null);
-                        setIsZoomed(false);
-                    }}
-                >
-                    {/* Close button */}
-                    <button
-                        className="absolute top-4 right-4 text-white text-3xl font-bold z-50 bg-black/50 rounded-full w-10 h-10 flex items-center justify-center"
-                        onClick={(e) => {
-                            e.stopPropagation(); // prevent outer click handler
-                            setPopupImage(null);
-                            setIsZoomed(false);
-                        }}
-                        aria-label="Закрыть изображение"
-                    >
-                        ×
-                    </button>
-                    <div
-                        className={`max-w-full max-h-full ${isZoomed ? 'overflow-auto' : 'overflow-hidden'}`}
-                        onClick={(e) => e.stopPropagation()} // prevent close on image click
-                    >
-                        <img
-                            src={`${popupImage}`}
-                            alt="Popup"
-                            className={`transition-all duration-300 shadow-2xl rounded ${
-                                isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
-                            }`}
-                            style={{
-                                width: isZoomed ? 'auto' : '100%',
-                                height: isZoomed ? 'auto' : 'auto',
-                                maxWidth: isZoomed ? 'none' : '100vw',
-                                maxHeight: isZoomed ? 'none' : '100vh',
-                                display: 'block',
-                            }}
-                            onClick={() => setIsZoomed((z) => !z)}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {successMessage && (
-                <div className="text-green-600 text-center font-medium mt-4">
-                    {successMessage}
-                </div>
-            )}
-        </div>
+        </TooltipProvider>
     );
 }

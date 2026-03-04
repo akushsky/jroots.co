@@ -1,10 +1,11 @@
-import {useState, useRef} from "react";
+import {useRef, useState} from "react";
+import {Link} from "react-router-dom";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
-import {userRegister} from "@/api/api.ts";
-import {Link} from "react-router-dom";
+import {userRegister} from "@/api/api";
+import {StatusMessage} from "@/components/shared/StatusMessage";
 
 export default function RegisterForm() {
     const [email, setEmail] = useState("");
@@ -14,11 +15,11 @@ export default function RegisterForm() {
     const [captchaToken, setCaptchaToken] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const captchaRef = useRef<any>(null);
+    const [loading, setLoading] = useState(false);
+    const captchaRef = useRef<HCaptcha>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
         setSuccessMessage(null);
         setErrorMessage(null);
 
@@ -37,6 +38,7 @@ export default function RegisterForm() {
             return;
         }
 
+        setLoading(true);
         try {
             const cleanTelegram = telegramUsername.startsWith("@")
                 ? telegramUsername.slice(1)
@@ -44,13 +46,15 @@ export default function RegisterForm() {
 
             const data = await userRegister(username, email, password, cleanTelegram, captchaToken);
             setSuccessMessage(data.message || "Регистрация прошла успешно.");
-        } catch (err) {
+        } catch {
             setErrorMessage("Ошибка регистрации. Попробуйте ещё раз.");
+        } finally {
+            setLoading(false);
         }
     };
 
-    function isValidTelegramUsername(username: string): boolean {
-        const clean = username.startsWith("@") ? username.slice(1) : username;
+    function isValidTelegramUsername(tgUsername: string): boolean {
+        const clean = tgUsername.startsWith("@") ? tgUsername.slice(1) : tgUsername;
         return /^[a-zA-Z0-9](?:[a-zA-Z0-9_]{3,30}[a-zA-Z0-9])?$/.test(clean);
     }
 
@@ -60,21 +64,13 @@ export default function RegisterForm() {
                 <CardContent className="p-6 space-y-4">
                     <div className="text-center">
                         <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
-                            ← На главную
+                            &larr; На главную
                         </Link>
                     </div>
 
                     <h2 className="text-xl font-semibold text-center">Регистрация</h2>
-                    {successMessage && (
-                        <div className="bg-green-100 text-green-800 px-4 py-2 rounded text-sm">
-                            {successMessage}
-                        </div>
-                    )}
-                    {errorMessage && (
-                        <div className="bg-red-100 text-red-800 px-4 py-2 rounded text-sm">
-                            {errorMessage}
-                        </div>
-                    )}
+                    {successMessage && <StatusMessage type="success" message={successMessage} />}
+                    {errorMessage && <StatusMessage type="error" message={errorMessage} />}
                     {!successMessage && (
                         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                             <Input
@@ -109,8 +105,8 @@ export default function RegisterForm() {
                                 onVerify={(token) => setCaptchaToken(token)}
                                 ref={captchaRef}
                             />
-                            <Button type="submit" className="w-full">
-                                Зарегистрироваться
+                            <Button type="submit" className="w-full" disabled={loading}>
+                                {loading ? "Регистрация..." : "Зарегистрироваться"}
                             </Button>
                         </form>
                     )}

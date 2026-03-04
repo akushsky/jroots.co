@@ -1,8 +1,5 @@
--- Enable fuzzy search extension
-CREATE
-    EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Dictionary table for image sources
 CREATE TABLE image_sources
 (
     id          SERIAL PRIMARY KEY,
@@ -10,7 +7,21 @@ CREATE TABLE image_sources
     description TEXT
 );
 
--- Main searchable objects table
+CREATE TABLE images
+(
+    id                  SERIAL PRIMARY KEY,
+    image_path          TEXT  NOT NULL,
+    image_key           TEXT  NOT NULL,
+    image_source_id     INT   REFERENCES image_sources (id) ON DELETE SET NULL,
+    telegram_file_id    TEXT,
+    image_data          BYTEA NOT NULL,
+    thumbnail_data      BYTEA,
+    sha512_hash         TEXT  NOT NULL UNIQUE,
+    image_file_path     TEXT,
+    thumbnail_file_path TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE search_objects
 (
     id           SERIAL PRIMARY KEY,
@@ -19,26 +30,6 @@ CREATE TABLE search_objects
     price        INT  NOT NULL DEFAULT 300,
     created_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
-);
-
-
--- Indexes for fuzzy search
-CREATE INDEX idx_search_objects_text_trgm ON search_objects USING GIN (text_content gin_trgm_ops);
-CREATE INDEX idx_images_key_trgm ON images USING GIN (image_key gin_trgm_ops);
-CREATE INDEX idx_images_path_trgm ON images USING GIN (image_path gin_trgm_ops);
-
--- Images table for storing image data
-CREATE TABLE images
-(
-    id               SERIAL PRIMARY KEY,
-    image_path       TEXT  NOT NULL,
-    image_key        TEXT  NOT NULL,
-    image_source_id  INT   REFERENCES image_sources (id) ON DELETE SET NULL,
-    telegram_file_id TEXT,
-    image_data       BYTEA NOT NULL,
-    thumbnail_data   BYTEA,
-    sha512_hash      TEXT  NOT NULL UNIQUE,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE users
@@ -53,9 +44,6 @@ CREATE TABLE users
     is_subscribed     BOOLEAN DEFAULT FALSE
 );
 
-CREATE UNIQUE INDEX idx_users_email ON users (email);
-
--- Table to track user purchases of specific search objects
 CREATE TABLE image_purchases
 (
     id           SERIAL PRIMARY KEY,
@@ -65,3 +53,9 @@ CREATE TABLE image_purchases
     UNIQUE (user_id, image_id)
 );
 
+CREATE INDEX idx_search_objects_text_trgm ON search_objects USING GIN (text_content gin_trgm_ops);
+CREATE INDEX idx_images_key_trgm ON images USING GIN (image_key gin_trgm_ops);
+CREATE INDEX idx_images_path_trgm ON images USING GIN (image_path gin_trgm_ops);
+CREATE UNIQUE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_image_purchases_user_id ON image_purchases (user_id);
+CREATE INDEX idx_image_purchases_image_id ON image_purchases (image_id);

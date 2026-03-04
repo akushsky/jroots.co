@@ -1,0 +1,98 @@
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
+from app.database import get_db
+from app.models import User
+from app.schemas import RegisterRequest
+from app.services.auth import (
+    authenticate,
+    generate_verification_token,
+    hash_password,
+    verify_hcaptcha,
+    verify_token,
+)
+from app.services.email import send_email
+
+logger = logging.getLogger("jroots")
+
+router = APIRouter(prefix="/api", tags=["auth"])
+
+
+@router.post("/register")
+async def register_user(
+    data: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    if not await verify_hcaptcha(data.captcha_token):
+        raise HTTPException(status_code=400, detail="Проверка CAPTCHA не пройдена")
+
+    existing_user = await db.execute(select(User).where(User.email == data.email))
+    if existing_user.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    settings = get_settings()
+    verification_token = generate_verification_token(str(data.email))
+    verification_url = f"{settings.frontend_url}/verify?token={verification_token}"
+
+    hashed_pw = hash_password(data.password)
+    user = User(
+        username=data.username,
+        email=data.email,
+        hashed_password=hashed_pw,
+        telegram_username=data.telegram_username,
+        is_verified=False,
+    )
+
+    db.add(user)
+    await db.commit()
+
+    logger.info("User %s registered with email %s", data.username, data.email)
+
+    html = f"""
+    <h1>Подтвердите регистрацию</h1>
+    <p>Здравствуйте, {data.username}!</p>
+    <p>Пожалуйста, подтвердите ваш email, перейдя по ссылке ниже:</p>
+    <a href="{verification_url}">Подтвердить Email</a>
+    """
+    background_tasks.add_task(
+        send_email,
+        to_email=str(data.email),
+        subject="Подтверждение регистрации",
+        html_content=html,
+    )
+
+    return {"message": "Регистрация прошла успешно. Пожалуйста, проверьте вашу почту для подтверждения."}
+
+
+@router.get("/verify")
+async def verify_user(token: str, db: AsyncSession = Depends(get_db)):
+    email = verify_token(token)
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_verified = True
+    await db.commit()
+
+    logger.info("User %s verified their email %s", user.username, user.email)
+
+    return {"message": "User verified successfully"}
+
+
+@router.post("/login")
+async def login_user(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.email == form_data.username))
+    user = result.scalar_one_or_none()
+    access_token = authenticate(user, form_data.username, form_data.password)
+    return {"access_token": access_token, "token_type": "bearer"}

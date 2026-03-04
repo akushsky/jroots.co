@@ -1,0 +1,29 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+.venv
+.DS_Store
+*.md
+
+# Local environment files must not be baked into images
+backend/.env
+backend/.env.*
+.env
+.env.local
+
+# Python cache
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Node
+frontend/node_modules
+frontend/dist
+
+# Local data
+media/
+cli/input/
