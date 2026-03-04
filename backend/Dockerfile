@@ -2,7 +2,7 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-COPY ./backend/pyproject.toml ./
+COPY ./backend/pyproject.toml ./backend/poetry.lock ./
 
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*

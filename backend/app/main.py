@@ -24,7 +24,12 @@ if settings.sentry_dsn:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT 1"))
+        if settings.environment == "test":
+            from app.models import Base
+
+            await conn.run_sync(Base.metadata.create_all)
+        else:
+            await conn.execute(text("SELECT 1"))
     yield
 
 

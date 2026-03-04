@@ -1,0 +1,28 @@
+services:
+  backend:
+    image: jroots-backend
+    entrypoint: []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      SECRET_KEY: ci-test-secret
+      ALGORITHM: HS256
+      ADMIN_PASSWORD: ci-test-password
+      DATABASE_URL: sqlite+aiosqlite:///./test.db
+      ENVIRONMENT: test
+      MEDIA_PATH: /tmp/media
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health').raise_for_status()"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  frontend:
+    image: jroots-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy

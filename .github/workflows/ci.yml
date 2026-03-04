@@ -95,16 +95,11 @@ jobs:
         working-directory: e2e
         run: npm ci && npx playwright install --with-deps chromium
 
-      - name: Build and start services
+      - name: Build images and start services
         run: |
           docker build -f backend/Dockerfile -t jroots-backend .
           docker build -f frontend/Dockerfile -t jroots-frontend .
-          docker compose -f docker-compose.prod.yml up -d
-        env:
-          SECRET_KEY: e2e-test-secret
-          ADMIN_PASSWORD: e2e-test-password
-          DATABASE_URL: sqlite+aiosqlite:///./test.db
-          ENVIRONMENT: test
+          docker compose -f docker-compose.ci.yml up -d
 
       - name: Wait for health
         run: |
@@ -112,6 +107,7 @@ jobs:
             curl -sf http://localhost:80/api/health && exit 0
             sleep 2
           done
+          docker compose -f docker-compose.ci.yml logs
           exit 1
 
       - name: Run E2E tests
@@ -126,3 +122,7 @@ jobs:
         with:
           name: playwright-traces
           path: e2e/test-results/
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down
