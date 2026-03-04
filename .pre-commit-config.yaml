@@ -1,17 +1,47 @@
 repos:
   - repo: local
     hooks:
+      # ── Backend ──
       - id: ruff-check
-        name: Ruff lint
-        entry: .venv/bin/ruff check
+        name: "Backend: ruff lint"
+        entry: .venv/bin/ruff check backend/app/ backend/tests/
         language: system
         types: [python]
-        args: [backend/app/, backend/tests/]
         pass_filenames: false
 
       - id: pytest-backend
-        name: Run backend tests with pytest
+        name: "Backend: pytest"
         entry: ./run-tests.sh
         language: system
         types: [python]
+        pass_filenames: false
+
+      # ── Frontend ──
+      - id: eslint-frontend
+        name: "Frontend: eslint"
+        entry: bash -c "cd frontend && npm run lint"
+        language: system
+        files: ^frontend/src/
+        pass_filenames: false
+
+      - id: tsc-frontend
+        name: "Frontend: type check"
+        entry: bash -c "cd frontend && npx tsc --noEmit"
+        language: system
+        files: ^frontend/src/
+        pass_filenames: false
+
+      - id: build-frontend
+        name: "Frontend: build"
+        entry: bash -c "cd frontend && npm run build"
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
+      # ── Security ──
+      - id: npm-audit
+        name: "Frontend: npm audit (high+critical)"
+        entry: bash -c "cd frontend && npm audit --audit-level=high"
+        language: system
+        files: ^frontend/package
         pass_filenames: false
