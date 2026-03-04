@@ -21,7 +21,7 @@ export default function VerifyPage() {
                 } else {
                     setStatus("error");
                 }
-            } catch (err) {
+            } catch {
                 setStatus("error");
             }
         };

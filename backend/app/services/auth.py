@@ -39,7 +39,6 @@ def authenticate(user: User | None, username: str, password: str) -> str:
         logger.error("User with email %s not found", username)
         raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
-    settings = get_settings()
     expected_hash = _get_admin_hashed_password() if user.is_admin else user.hashed_password
     if not verify_password(password, expected_hash):
         logger.error("Invalid password for user with email %s", username)
