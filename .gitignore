@@ -22,9 +22,14 @@ __pycache__/
 venv/
 env/
 
-# Environment files
+# Environment files – NEVER commit real .env
 .env
-.env.local
+.env.*
+!.env.example
+!**/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
 
 # Node
 node_modules/
