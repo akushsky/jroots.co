@@ -20,10 +20,11 @@ router = APIRouter(prefix="/api", tags=["search"])
 async def search(
     q: str,
     skip: int = 0,
-    limit: int = 20,
+    limit: int = 20,  # capped at 100 below
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    limit = min(limit, 100)
     like_query = f"%{q}%"
 
     similarity_conditions = [

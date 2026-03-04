@@ -25,6 +25,9 @@ python-logging-loki = "^0.3.1"
 python-json-logger = "^3.3.0"
 colorlog = "^6.7.0"
 alembic = "^1.13.0"
+slowapi = "^0.1.9"
+gunicorn = "^25.1.0"
+sentry-sdk = {extras = ["fastapi"], version = "^2.54.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.1.1"
@@ -35,6 +38,8 @@ pre-commit = "^3.0.0"
 black = "^24.2.0"
 respx = "^0.22.0"
 aiosqlite = "^0.20.0"
+greenlet = "^3.3.2"
+pytest-cov = "^7.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -51,3 +56,12 @@ ignore = ["E402"]
 [tool.pytest.ini_options]
 pythonpath = "."
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/utils/logging_config.py", "alembic/*"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+exclude_lines = ["pragma: no cover", "if __name__"]

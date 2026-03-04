@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -94,7 +94,13 @@ async def request_access(
 async def handle_access_decision(
     update: Update,
     db: AsyncSession = Depends(get_db),
+    x_telegram_bot_api_secret_token: Optional[str] = Header(default=None),
 ):
+    settings = get_settings()
+    if settings.telegram_webhook_secret:
+        if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
+            raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
     if not update.callback_query:
         return Response(status_code=200)
 

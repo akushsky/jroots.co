@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import SearchObject, Image, ImageSource, User
 from app.schemas import SearchObjectSchema, PaginatedResults, ImageSchema, ImageSourceSchema
@@ -37,6 +38,9 @@ async def create_image(
         return existing
 
     image_binary = await image_file.read()
+    max_bytes = get_settings().max_upload_size_mb * 1024 * 1024
+    if len(image_binary) > max_bytes:
+        raise HTTPException(status_code=413, detail="File too large")
     return await save_unique_image(db, image_path, image_key, image_source_id, image_binary)
 
 
@@ -80,6 +84,7 @@ async def list_objects(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
+    limit = min(limit, 100)
     total = await db.scalar(select(func.count()).select_from(SearchObject))
 
     result = await db.execute(

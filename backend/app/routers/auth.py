@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.services.auth import (
     verify_hcaptcha,
     verify_token,
 )
+from app.rate_limit import limiter
 from app.services.email import send_email
 
 logger = logging.getLogger("jroots")
@@ -24,7 +25,9 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 
 @router.post("/register")
+@limiter.limit("5/minute")
 async def register_user(
+    request: Request,
     data: RegisterRequest,
     db: AsyncSession = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
@@ -88,7 +91,9 @@ async def verify_user(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login")
+@limiter.limit("10/minute")
 async def login_user(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):

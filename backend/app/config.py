@@ -16,9 +16,11 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     environment: str = "development"
     loki_hostname: str = "loki"
+    sentry_dsn: str = ""
     media_path: str = "/app/media"
     access_token_expire_minutes: int = 60 * 24
     telegram_webhook_secret: str = ""
+    max_upload_size_mb: int = 50
 
     model_config = {
         "env_file": ".env",
