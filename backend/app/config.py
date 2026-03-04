@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     telegram_webhook_secret: str = ""
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     @property
     def cors_origins_list(self) -> list[str]:
