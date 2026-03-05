@@ -56,7 +56,7 @@ async def search(
         .join(Image)
         .options(selectinload(SearchObject.image).selectinload(Image.source))
         .where(filter_conditions)
-        .order_by(text("relevance DESC"))
+        .order_by(text("relevance DESC"), SearchObject.id.asc())
         .offset(skip)
         .limit(limit)
     )
