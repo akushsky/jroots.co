@@ -1,5 +1,6 @@
 import {useRef, useState} from "react";
 import {Link} from "react-router-dom";
+import {AxiosError} from "axios";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
@@ -46,8 +47,9 @@ export default function RegisterForm() {
 
             const data = await userRegister(username, email, password, cleanTelegram, captchaToken);
             setSuccessMessage(data.message || "Регистрация прошла успешно.");
-        } catch {
-            setErrorMessage("Ошибка регистрации. Попробуйте ещё раз.");
+        } catch (err) {
+            const detail = err instanceof AxiosError ? err.response?.data?.detail : undefined;
+            setErrorMessage(detail || "Ошибка регистрации. Попробуйте ещё раз.");
         } finally {
             setLoading(false);
         }

@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -37,7 +38,11 @@ async def register_user(
 
     existing_user = await db.execute(select(User).where(User.email == data.email))
     if existing_user.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="Этот email уже зарегистрирован")
+
+    existing_username = await db.execute(select(User).where(User.username == data.username))
+    if existing_username.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Имя пользователя уже занято")
 
     settings = get_settings()
     verification_token = generate_verification_token(str(data.email))
@@ -53,7 +58,11 @@ async def register_user(
     )
 
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Имя пользователя или email уже заняты")
 
     logger.info("User %s registered with email %s", data.username, data.email)
 
