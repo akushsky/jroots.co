@@ -25,12 +25,53 @@ from app.models.base import Base
 from app.services.auth import hash_password, create_access_token
 
 
+def _levenshtein(s1, s2):
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if not s2:
+        return len(s1)
+    prev = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        curr = [i + 1]
+        for j, c2 in enumerate(s2):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (c1 != c2)))
+        prev = curr
+    return prev[-1]
+
+
+def _word_similarity(query, text_content):
+    if not query or not text_content:
+        return 0.0
+    q = query.lower()
+    words = text_content.lower().split()
+    best = 0.0
+    for word in words:
+        if q == word:
+            return 1.0
+        if q in word or word in q:
+            best = max(best, 0.6)
+        else:
+            common = sum(1 for c in q if c in word)
+            best = max(best, common / max(len(q), len(word), 1) * 0.4)
+    return best
+
+
+def _best_word_levenshtein(content, query):
+    if not content or not query:
+        return 999
+    words = content.lower().split()
+    q = query.lower()
+    return min((_levenshtein(w, q) for w in words), default=999)
+
+
 @event.listens_for(engine.sync_engine, "connect")
 def _register_sqlite_functions(dbapi_conn, connection_record):
     dbapi_conn.create_function(
         "similarity", 2,
         lambda a, b: 1.0 if a and b and b.lower() in a.lower() else 0.0,
     )
+    dbapi_conn.create_function("word_similarity", 2, _word_similarity)
+    dbapi_conn.create_function("best_word_levenshtein", 2, _best_word_levenshtein)
     dbapi_conn.create_function("greatest", -1, lambda *args: max(args) if args else 0.0)
 
 

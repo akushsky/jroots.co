@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, or_, text
+from sqlalchemy import select, func, or_, text, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,9 @@ logger = logging.getLogger("jroots")
 
 router = APIRouter(prefix="/api", tags=["search"])
 
+WORD_SIMILARITY_THRESHOLD = 0.2
+SIMILARITY_THRESHOLD = 0.3
+
 
 @router.get("/search", response_model=PaginatedResults)
 async def search(
@@ -26,33 +29,33 @@ async def search(
 ):
     limit = min(limit, 100)
     like_query = f"%{q}%"
+    max_lev_distance = min(3, max(1, len(q) // 2))
+    q_len = max(len(q), 1)
 
-    similarity_conditions = [
-        func.similarity(SearchObject.text_content, q) > 0.3,
-        func.similarity(Image.image_key, q) > 0.3,
-        func.similarity(Image.image_path, q) > 0.3,
-    ]
+    word_sim = func.word_similarity(q, SearchObject.text_content)
+    key_sim = func.similarity(Image.image_key, q)
+    path_sim = func.similarity(Image.image_path, q)
+    lev_dist = func.best_word_levenshtein(SearchObject.text_content, q)
 
     filter_conditions = or_(
         SearchObject.text_content.ilike(like_query),
         Image.image_key.ilike(like_query),
         Image.image_path.ilike(like_query),
-        *similarity_conditions,
+        word_sim > WORD_SIMILARITY_THRESHOLD,
+        key_sim > SIMILARITY_THRESHOLD,
+        path_sim > SIMILARITY_THRESHOLD,
+        lev_dist <= max_lev_distance,
     )
 
     total = await db.scalar(
         select(func.count(SearchObject.id)).join(Image).where(filter_conditions)
     )
 
+    lev_score = 1.0 - cast(lev_dist, Float) / q_len
+    relevance = func.greatest(word_sim, key_sim, path_sim, lev_score).label("relevance")
+
     results = await db.execute(
-        select(
-            SearchObject,
-            func.greatest(
-                func.similarity(SearchObject.text_content, q),
-                func.similarity(Image.image_key, q),
-                func.similarity(Image.image_path, q),
-            ).label("relevance"),
-        )
+        select(SearchObject, relevance)
         .join(Image)
         .options(selectinload(SearchObject.image).selectinload(Image.source))
         .where(filter_conditions)
