@@ -2,7 +2,8 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import select, func
+from pydantic import BaseModel
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
@@ -153,6 +154,54 @@ async def delete_object(
     await db.delete(obj)
     await db.commit()
     return {"status": "deleted", "object_id": object_id}
+
+
+class BulkUpdateKeyRequest(BaseModel):
+    image_path: str
+    old_key: str
+    new_key: str
+
+
+@router.patch("/images/bulk-update-key")
+async def bulk_update_image_key(
+    body: BulkUpdateKeyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_admin),
+):
+    result = await db.execute(
+        update(Image)
+        .where(Image.image_path == body.image_path, Image.image_key == body.old_key)
+        .values(image_key=body.new_key)
+    )
+    await db.commit()
+    return {"updated": result.rowcount}
+
+
+@router.patch("/images/{image_id}", response_model=ImageSchema)
+async def update_image(
+    image_id: int,
+    image_key: str | None = Form(None),
+    image_path: str | None = Form(None),
+    image_source_id: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_admin),
+):
+    image = await db.scalar(
+        select(Image).options(selectinload(Image.source)).where(Image.id == image_id)
+    )
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if image_key is not None:
+        image.image_key = image_key
+    if image_path is not None:
+        image.image_path = image_path
+    if image_source_id is not None:
+        image.image_source_id = image_source_id
+
+    await db.commit()
+    await db.refresh(image, attribute_names=["source"])
+    return image
 
 
 @router.get("/image-sources", response_model=list[ImageSourceSchema])
