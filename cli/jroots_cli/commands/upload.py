@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import click
@@ -15,6 +16,9 @@ from ..reporter import Reporter
 _PBAR_FMT = (
     "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}"
 )
+
+MAX_RETRIES = 3
+RETRY_DELAY = 5
 
 
 def _process_images(client, rows, pbar) -> tuple[dict[str, str], Reporter]:
@@ -53,6 +57,7 @@ def _process_images(client, rows, pbar) -> tuple[dict[str, str], Reporter]:
 
 def _process_objects(client, rows, image_map, pbar) -> Reporter:
     reporter = Reporter()
+    failed_rows: list[dict] = []
     pbar.reset(total=len(rows))
     pbar.set_description("Uploading search objects")
 
@@ -77,8 +82,41 @@ def _process_objects(client, rows, image_map, pbar) -> Reporter:
             reporter.add_success()
         except Exception as e:
             reporter.add_error(f"Failed to create object for {Path(path).name}: {e}")
+            failed_rows.append(row)
 
         pbar.update(1)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        if not failed_rows:
+            break
+        click.secho(
+            f"\nRetrying {len(failed_rows)} failed object(s) (attempt {attempt}/{MAX_RETRIES})...",
+            fg="yellow",
+        )
+        time.sleep(RETRY_DELAY)
+        still_failed: list[dict] = []
+        for row in failed_rows:
+            sha512 = image_map.get(row["path"])
+            if not sha512:
+                continue
+            try:
+                client.upload_object(
+                    sha512=sha512,
+                    text_content=row["text_content"],
+                    price=row["price"],
+                )
+                reporter.add_success()
+                reporter.errors = [
+                    e for e in reporter.errors
+                    if row["text_content"] not in e
+                ]
+            except Exception:
+                still_failed.append(row)
+        if still_failed:
+            click.echo(f"  {len(failed_rows) - len(still_failed)} recovered, {len(still_failed)} still failing.")
+        else:
+            click.secho(f"  All {len(failed_rows)} recovered!", fg="green")
+        failed_rows = still_failed
 
     return reporter
 

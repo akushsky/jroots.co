@@ -6,12 +6,20 @@ import requests
 
 @click.command(help="Log in to the API to get a session token.")
 @click.argument("username")
+@click.option(
+    "--password", "-p",
+    envvar="JROOTS_PASSWORD",
+    default=None,
+    help="Password (or set JROOTS_PASSWORD env var). Prompts interactively if omitted.",
+)
 @click.pass_context
-def login(ctx, username):
+def login(ctx, username, password):
     obj = ctx.obj
 
-    try:
+    if not password:
         password = click.prompt("Password", hide_input=True, err=True)
+
+    try:
         click.echo(
             f"Attempting to log in {username} at {obj.api_base}...", err=True
         )
