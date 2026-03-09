@@ -88,6 +88,15 @@ class ApiClient:
         response.raise_for_status()
         return response.json()
 
+    @_retry_policy
+    def list_sources(self) -> list[dict]:
+        response = self.session.get(
+            f"{self.api_base}/api/admin/image-sources",
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def ping(self) -> bool:
         try:
             self.session.get(self.api_base, timeout=5)

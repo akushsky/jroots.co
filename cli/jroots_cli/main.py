@@ -4,6 +4,7 @@ import urllib3
 
 from .api_client import ApiClient
 from .commands.login import login
+from .commands.sources import sources
 from .commands.status import status
 from .commands.upload import upload_all, upload_images, upload_objects
 from .commands.validate import validate
@@ -70,6 +71,7 @@ def cli(ctx, api_url, token, no_verify_ssl, verbose):
 
 
 cli.add_command(login)
+cli.add_command(sources)
 cli.add_command(status)
 cli.add_command(upload_all)
 cli.add_command(upload_images)
