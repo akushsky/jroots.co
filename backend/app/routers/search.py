@@ -6,6 +6,7 @@ from sqlalchemy import select, func, or_, text, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.database import get_db
 from app.models import SearchObject, Image, ImagePurchase, User
 from app.schemas import SearchObjectSchema, PaginatedResults
@@ -86,7 +87,8 @@ async def search(
         obj_data = SearchObjectSchema.model_validate(obj, from_attributes=True)
         if obj.image:
             obj_data.image_id = obj.image.id
-            obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+            cdn = get_settings().cdn_base
+            obj_data.thumbnail_url = f"{cdn}/api/images/{obj.image.id}/thumbnail"
             if not current_user or (not current_user.is_admin and obj.image.id not in purchased_images):
                 obj_data.image.image_path = "********"
         obj_data.price = obj.price

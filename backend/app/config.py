@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     telegram_webhook_secret: str = ""
     max_upload_size_mb: int = 50
+    cdn_base: str = ""
 
     model_config = {
         "env_file": ".env",

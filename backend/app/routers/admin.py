@@ -103,7 +103,8 @@ async def list_objects(
         obj_data = SearchObjectSchema.model_validate(obj)
         if obj.image:
             obj_data.image_id = obj.image.id
-            obj_data.thumbnail_url = f"/api/images/{obj.image.id}/thumbnail"
+            cdn = get_settings().cdn_base
+            obj_data.thumbnail_url = f"{cdn}/api/images/{obj.image.id}/thumbnail"
         objects_with_urls.append(obj_data)
 
     return {"items": objects_with_urls, "total": total}
