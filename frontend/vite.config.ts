@@ -4,7 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import {defineConfig} from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(() => ({
+    base: process.env.CDN_BASE || "/",
     plugins: [react(), tailwindcss()],
     resolve: {
         alias: {
@@ -25,4 +26,4 @@ export default defineConfig({
         globals: true,
         setupFiles: ["./src/test-setup.ts"],
     },
-});
+}));

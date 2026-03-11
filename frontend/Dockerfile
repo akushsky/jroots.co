@@ -1,4 +1,6 @@
 FROM node:20-alpine as builder
+ARG CDN_BASE=/
+ENV CDN_BASE=${CDN_BASE}
 
 WORKDIR /app
 COPY ./frontend /app
