@@ -200,9 +200,9 @@ export default function SearchPage() {
                                         </div>
                                     ) : (
                                         <Button
-                                            variant="secondary"
+                                            variant="outline"
                                             size="sm"
-                                            className="text-xs px-2 py-1 h-auto rounded-full shadow"
+                                            className="text-xs px-3 py-1 h-auto rounded-full"
                                             onClick={() => sendRequestAccess(result)}
                                         >
                                             Запросить доступ
