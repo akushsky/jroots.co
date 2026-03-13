@@ -4,7 +4,7 @@ from pathlib import Path
 from .api_client import calculate_sha512
 
 IMAGES_REQUIRED_COLUMNS = {"path", "image_key", "image_source_id", "image_path"}
-OBJECTS_REQUIRED_COLUMNS = {"path", "text_content", "price"}
+OBJECTS_REQUIRED_COLUMNS = {"path", "text_content"}
 
 
 def read_csv(filepath: str) -> list[dict]:

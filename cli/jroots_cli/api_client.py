@@ -65,7 +65,7 @@ class ApiClient:
 
     @_retry_policy
     def upload_object(
-        self, sha512: str, text_content: str, price: str
+        self, sha512: str, text_content: str, price: str = "0"
     ) -> requests.Response:
         response = self.session.post(
             f"{self.api_base}/api/admin/objects",

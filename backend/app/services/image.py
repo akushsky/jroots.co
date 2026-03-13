@@ -126,7 +126,7 @@ async def save_unique_image(
     return result.scalar_one()
 
 
-async def create_search_object(db: AsyncSession, text_content: str, price: int, image_id: int) -> SearchObject:
+async def create_search_object(db: AsyncSession, text_content: str, image_id: int, price: int = 0) -> SearchObject:
     obj = SearchObject(text_content=text_content, price=price, image_id=image_id)
     db.add(obj)
     await db.commit()

@@ -48,7 +48,7 @@ async def create_image(
 @router.post("/objects", response_model=SearchObjectSchema)
 async def create_object(
     text_content: str = Form(...),
-    price: int = Form(...),
+    price: int = Form(0),
     image_path: Optional[str] = Form(None),
     image_key: Optional[str] = Form(None),
     image_source_id: Optional[int] = Form(None),
@@ -75,7 +75,7 @@ async def create_object(
     image = await create_image(
         image_path, image_key, image_source_id, image_file, image_file_sha512, db, user,
     )
-    return await create_search_object(db, text_content, price, image.id)
+    return await create_search_object(db, text_content, image.id, price=price)
 
 
 @router.get("/objects", response_model=PaginatedResults)
@@ -114,7 +114,7 @@ async def list_objects(
 async def update_object(
     object_id: int,
     text_content: str = Form(...),
-    price: int = Form(...),
+    price: int = Form(0),
     image_path: str = Form(...),
     image_key: str = Form(...),
     image_source_id: int | None = Form(None),

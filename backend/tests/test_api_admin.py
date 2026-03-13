@@ -46,7 +46,6 @@ async def test_create_object_success(client, db_session):
     )
     assert response.status_code == 200
     assert response.json()["text_content"] == "Test content"
-    assert response.json()["price"] == 50
 
 
 async def test_list_objects(client, db_session):
@@ -77,7 +76,6 @@ async def test_update_object(client, db_session):
     )
     assert response.status_code == 200
     assert response.json()["text_content"] == "Updated"
-    assert response.json()["price"] == 25
 
 
 async def test_delete_object(client, db_session):

@@ -11,7 +11,7 @@ import {
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {TooltipProvider} from "@/components/ui/tooltip";
 import Highlighter from "react-highlight-words";
 import {useAuth} from "@/hooks/useAuth";
 import {ImagePopup} from "@/components/shared/ImagePopup";
@@ -25,7 +25,6 @@ interface ImageSource {
 
 interface FormState {
     text_content: string;
-    price: number | null;
     image_path: string;
     image_key: string;
     image_source_id: number | null;
@@ -36,7 +35,6 @@ interface FormState {
 interface SearchObjectItem {
     id: number;
     text_content: string;
-    price?: number;
     thumbnail_url?: string;
     image?: {
         id: number;
@@ -49,7 +47,6 @@ interface SearchObjectItem {
 
 const EMPTY_FORM: FormState = {
     text_content: "",
-    price: 0,
     image_path: "",
     image_key: "",
     image_source_id: null,
@@ -99,7 +96,6 @@ export default function AdminDashboard() {
     const handleClone = (obj: SearchObjectItem) => {
         setForm({
             text_content: obj.text_content,
-            price: obj.price ?? 0,
             image_path: obj.image?.image_path ?? "",
             image_key: obj.image?.image_key ?? "",
             image_source_id: obj.image?.source?.id ?? null,
@@ -112,7 +108,6 @@ export default function AdminDashboard() {
         setEditingId(obj.id);
         setForm({
             text_content: obj.text_content,
-            price: obj.price ?? 0,
             image_path: obj.image?.image_path ?? "",
             image_key: obj.image?.image_key ?? "",
             image_source_id: obj.image?.source?.id ?? null,
@@ -124,7 +119,6 @@ export default function AdminDashboard() {
     const handleUpdate = async () => {
         const formData = new FormData();
         formData.append("text_content", form.text_content);
-        formData.append("price", form.price?.toString() ?? "");
         formData.append("image_path", form.image_path);
         formData.append("image_key", form.image_key);
         if (form.image_source_id) formData.append("image_source_id", form.image_source_id.toString());
@@ -150,7 +144,6 @@ export default function AdminDashboard() {
 
         const formData = new FormData();
         formData.append("text_content", form.text_content);
-        formData.append("price", form.price?.toString() ?? "");
         formData.append("image_path", form.image_path);
         formData.append("image_key", form.image_key);
         formData.append("image_source_id", form.image_source_id!.toString());
@@ -191,7 +184,6 @@ export default function AdminDashboard() {
 
                 <div className="space-y-2">
                     <Input placeholder="ФИО" value={form.text_content} onChange={(e) => setForm({...form, text_content: e.target.value})} />
-                    <Input placeholder="Стоимость" value={form.price?.toString()} onChange={(e) => setForm({...form, price: parseInt(e.target.value) || 0})} />
                     <Input placeholder="Шифр" value={form.image_path} onChange={(e) => setForm({...form, image_path: e.target.value})} />
                     <Input placeholder="Описание" value={form.image_key} onChange={(e) => setForm({...form, image_key: e.target.value})} />
 
@@ -229,7 +221,6 @@ export default function AdminDashboard() {
                                 {editingId === obj.id ? (
                                     <div className="space-y-2">
                                         <Input value={form.text_content} onChange={(e) => setForm({...form, text_content: e.target.value})} />
-                                        <Input value={form.price?.toString()} onChange={(e) => setForm({...form, price: parseInt(e.target.value) || 0})} />
                                         <Input value={form.image_path} onChange={(e) => setForm({...form, image_path: e.target.value})} />
                                         <Input value={form.image_key} onChange={(e) => setForm({...form, image_key: e.target.value})} />
                                         <select
@@ -278,18 +269,6 @@ export default function AdminDashboard() {
                                     </>
                                 )}
                             </CardContent>
-                            {obj.price !== undefined && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-3 py-1 rounded-full shadow cursor-help">
-                                            {(obj.price / 100).toFixed(2)} &euro;
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>Цена за доступ к полному изображению и шифру дела</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
                         </div>
                     </Card>
                 ))}

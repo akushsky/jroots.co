@@ -108,7 +108,7 @@ def test_validate_objects_empty(tmp_path):
 
 def test_validate_objects_missing_columns(tmp_path):
     csv_file = tmp_path / "objects.csv"
-    csv_file.write_text("path,text_content\nimg.jpg,Name\n", encoding="utf-8")
+    csv_file.write_text("path\nimg.jpg\n", encoding="utf-8")
     _, errors = validate_objects_csv(str(csv_file))
     assert any("missing columns" in e.lower() for e in errors)
 

@@ -19,7 +19,6 @@ interface ImageSource {
 interface SearchResult {
     id: number;
     text_content: string;
-    price: number;
     image_id: number;
     thumbnail_url: string;
     similarity_score: number;
@@ -176,7 +175,7 @@ export default function SearchPage() {
                                                         </span>
                                                     </TooltipTrigger>
                                                     <TooltipContent>
-                                                        <p>Купите доступ к этой записи, чтобы увидеть шифр</p>
+                                                        <p>Запросите доступ, чтобы увидеть шифр</p>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             ) : (
@@ -194,36 +193,22 @@ export default function SearchPage() {
                                         </div>
                                     </div>
                                 </CardContent>
-                                {result.price !== undefined && (
-                                    <div className="absolute top-2 right-2 z-10">
-                                        {result.requested ? (
-                                            <div className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
-                                                Запрос отправлен
-                                            </div>
-                                        ) : (
-                                            <Tooltip>
-                                                <TooltipTrigger asChild className="cursor-pointer">
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        className="text-xs px-2 py-1 h-auto rounded-full shadow"
-                                                        onClick={() => sendRequestAccess(result)}
-                                                    >
-                                                        <span className="hidden md:inline">
-                                                            &euro;{(result.price / 100).toFixed(2)}
-                                                        </span>
-                                                        <span className="inline md:hidden">
-                                                            Запросить за &euro;{(result.price / 100).toFixed(2)}
-                                                        </span>
-                                                    </Button>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                    <p>Нажмите, чтобы отправить запрос на доступ</p>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        )}
-                                    </div>
-                                )}
+                                <div className="absolute top-2 right-2 z-10">
+                                    {result.requested ? (
+                                        <div className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
+                                            Запрос отправлен
+                                        </div>
+                                    ) : (
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            className="text-xs px-2 py-1 h-auto rounded-full shadow"
+                                            onClick={() => sendRequestAccess(result)}
+                                        >
+                                            Запросить доступ
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         </Card>
                     ))}

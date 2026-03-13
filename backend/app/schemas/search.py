@@ -6,7 +6,6 @@ from app.schemas.image import ImageSchema
 class SearchObjectSchema(BaseModel):
     id: int
     text_content: str
-    price: int | None = None
     image: ImageSchema | None = None
     image_id: int | None = None
     thumbnail_url: str | None = None

@@ -77,7 +77,7 @@ def _process_objects(client, rows, image_map, pbar) -> Reporter:
             client.upload_object(
                 sha512=sha512,
                 text_content=row["text_content"],
-                price=row["price"],
+                price=row.get("price", "0"),
             )
             reporter.add_success()
         except Exception as e:
@@ -103,7 +103,7 @@ def _process_objects(client, rows, image_map, pbar) -> Reporter:
                 client.upload_object(
                     sha512=sha512,
                     text_content=row["text_content"],
-                    price=row["price"],
+                    price=row.get("price", "0"),
                 )
                 reporter.add_success()
                 reporter.errors = [
