@@ -128,7 +128,7 @@ async def test_forgot_password_existing_user(client, db_session):
     with patch("app.routers.auth.send_email", new_callable=AsyncMock) as mock_send:
         response = await client.post("/api/forgot-password", json={"email": "forgot@example.com"})
     assert response.status_code == 200
-    assert "зарегистрирован" in response.json()["message"]
+    assert "существует" in response.json()["message"]
     mock_send.assert_called_once()
 
 
@@ -136,7 +136,7 @@ async def test_forgot_password_unknown_email(client):
     with patch("app.routers.auth.send_email", new_callable=AsyncMock) as mock_send:
         response = await client.post("/api/forgot-password", json={"email": "nobody@example.com"})
     assert response.status_code == 200
-    assert "зарегистрирован" in response.json()["message"]
+    assert "существует" in response.json()["message"]
     mock_send.assert_not_called()
 
 

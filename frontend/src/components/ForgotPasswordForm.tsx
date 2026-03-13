@@ -27,7 +27,7 @@ export default function ForgotPasswordForm() {
             const data = await forgotPassword(email);
             setSuccess(data.message);
         } catch {
-            setSuccess("Если этот email зарегистрирован, мы отправили ссылку для сброса пароля.");
+            setSuccess("Если аккаунт с таким email существует, на него будет отправлена ссылка для сброса пароля.");
         } finally {
             setLoading(false);
         }

@@ -146,7 +146,7 @@ async def forgot_password(
         )
         logger.info("Password reset requested for %s", data.email)
 
-    return {"message": "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."}
+    return {"message": "Если аккаунт с таким email существует, на него будет отправлена ссылка для сброса пароля."}
 
 
 @router.post("/reset-password")
