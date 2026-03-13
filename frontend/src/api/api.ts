@@ -58,6 +58,12 @@ export const userRegister = async (
 export const userLogin = async (email: string, password: string) =>
     (await apiClient.post("/login", new URLSearchParams({username: email, password}))).data;
 
+export const forgotPassword = async (email: string) =>
+    (await apiClient.post("/forgot-password", {email})).data;
+
+export const resetPassword = async (token: string, newPassword: string) =>
+    (await apiClient.post("/reset-password", {token, new_password: newPassword})).data;
+
 export const requestAccess = async (imageId: number, searchTextContent: string) =>
     (await apiClient.post("/request_access", {
         image_id: imageId,

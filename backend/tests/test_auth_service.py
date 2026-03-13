@@ -100,3 +100,60 @@ async def test_get_current_user_optional_valid():
 
     result = await get_current_user_optional(token=token, db=db)
     assert result is user
+
+
+def test_generate_reset_token_contains_hash_prefix():
+    from app.services.auth import generate_reset_token, hash_password
+    from jose import jwt
+    from app.config import get_settings
+
+    hashed = hash_password("mypassword")
+    user = _make_user(password_hash=hashed)
+    token = generate_reset_token(user)
+
+    settings = get_settings()
+    payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    assert payload["email"] == user.email
+    assert payload["hash_prefix"] == hashed[:16]
+    assert payload["purpose"] == "reset"
+    assert "exp" in payload
+
+
+def test_verify_reset_token_valid():
+    from app.services.auth import generate_reset_token, verify_reset_token, hash_password
+
+    hashed = hash_password("mypassword")
+    user = _make_user(password_hash=hashed)
+    token = generate_reset_token(user)
+
+    email, hash_prefix = verify_reset_token(token)
+    assert email == user.email
+    assert hash_prefix == hashed[:16]
+
+
+def test_verify_reset_token_invalid():
+    from app.services.auth import verify_reset_token
+
+    with pytest.raises(HTTPException) as exc:
+        verify_reset_token("invalid.token.here")
+    assert exc.value.status_code == 400
+
+
+def test_verify_reset_token_expired():
+    from app.services.auth import verify_reset_token, hash_password
+    from jose import jwt
+    from app.config import get_settings
+    from datetime import datetime, timezone, timedelta
+
+    settings = get_settings()
+    payload = {
+        "email": "test@example.com",
+        "hash_prefix": hash_password("p")[:16],
+        "purpose": "reset",
+        "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+    with pytest.raises(HTTPException) as exc:
+        verify_reset_token(token)
+    assert exc.value.status_code == 400

@@ -84,6 +84,33 @@ def verify_token(token: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid token")
 
 
+RESET_TOKEN_EXPIRE_MINUTES = 60
+
+
+def generate_reset_token(user: User) -> str:
+    settings = get_settings()
+    payload = {
+        "email": user.email,
+        "hash_prefix": user.hashed_password[:16],
+        "purpose": "reset",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def verify_reset_token(token: str) -> tuple[str, str]:
+    settings = get_settings()
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        email = payload.get("email")
+        hash_prefix = payload.get("hash_prefix")
+        if not email or not hash_prefix or payload.get("purpose") != "reset":
+            raise HTTPException(status_code=400, detail="Недействительная ссылка для сброса пароля")
+        return email, hash_prefix
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля истекла или недействительна")
+
+
 async def resolve_user_from_token(token: Optional[str], db: AsyncSession) -> Optional[User]:
     if not token:
         return None

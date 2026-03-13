@@ -121,3 +121,74 @@ async def test_verify_success(client, db_session):
 async def test_verify_invalid_token(client):
     response = await client.get("/api/verify?token=invalid-token")
     assert response.status_code == 400
+
+
+async def test_forgot_password_existing_user(client, db_session):
+    await create_user(db_session, email="forgot@example.com")
+    with patch("app.routers.auth.send_email", new_callable=AsyncMock) as mock_send:
+        response = await client.post("/api/forgot-password", json={"email": "forgot@example.com"})
+    assert response.status_code == 200
+    assert "зарегистрирован" in response.json()["message"]
+    mock_send.assert_called_once()
+
+
+async def test_forgot_password_unknown_email(client):
+    with patch("app.routers.auth.send_email", new_callable=AsyncMock) as mock_send:
+        response = await client.post("/api/forgot-password", json={"email": "nobody@example.com"})
+    assert response.status_code == 200
+    assert "зарегистрирован" in response.json()["message"]
+    mock_send.assert_not_called()
+
+
+async def test_forgot_password_unverified_user(client, db_session):
+    await create_user(db_session, email="unverified@example.com", is_verified=False)
+    with patch("app.routers.auth.send_email", new_callable=AsyncMock) as mock_send:
+        response = await client.post("/api/forgot-password", json={"email": "unverified@example.com"})
+    assert response.status_code == 200
+    mock_send.assert_not_called()
+
+
+async def test_reset_password_success(client, db_session):
+    user = await create_user(db_session, email="reset@example.com", password="oldpass")
+    from app.services.auth import generate_reset_token
+    token = generate_reset_token(user)
+
+    response = await client.post("/api/reset-password", json={
+        "token": token,
+        "new_password": "newpass123",
+    })
+    assert response.status_code == 200
+    assert "успешно" in response.json()["message"]
+
+    login_response = await client.post("/api/login", data={
+        "username": "reset@example.com",
+        "password": "newpass123",
+    })
+    assert login_response.status_code == 200
+
+
+async def test_reset_password_invalid_token(client):
+    response = await client.post("/api/reset-password", json={
+        "token": "invalid.token.here",
+        "new_password": "newpass123",
+    })
+    assert response.status_code == 400
+
+
+async def test_reset_password_already_used(client, db_session):
+    user = await create_user(db_session, email="used@example.com", password="oldpass")
+    from app.services.auth import generate_reset_token
+    token = generate_reset_token(user)
+
+    response1 = await client.post("/api/reset-password", json={
+        "token": token,
+        "new_password": "newpass123",
+    })
+    assert response1.status_code == 200
+
+    response2 = await client.post("/api/reset-password", json={
+        "token": token,
+        "new_password": "anotherpass",
+    })
+    assert response2.status_code == 400
+    assert "уже была использована" in response2.json()["detail"]

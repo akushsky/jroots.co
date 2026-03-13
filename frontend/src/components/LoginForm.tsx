@@ -63,6 +63,11 @@ export default function LoginForm() {
                             required
                         />
                         {error && <StatusMessage type="error" message={error} />}
+                        <div className="text-right">
+                            <Link to="/forgot-password" className="text-sm text-indigo-600 hover:underline">
+                                Забыли пароль?
+                            </Link>
+                        </div>
                         <Button type="submit" className="w-full" disabled={loading}>
                             {loading ? "Вход..." : "Войти"}
                         </Button>

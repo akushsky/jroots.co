@@ -10,6 +10,8 @@ const AdminDashboard = lazy(() => import("@/components/AdminDashboard"));
 const RegisterForm = lazy(() => import("@/components/RegisterForm"));
 const VerifyPage = lazy(() => import("@/components/VerifyPage"));
 const LoginForm = lazy(() => import("@/components/LoginForm"));
+const ForgotPasswordForm = lazy(() => import("@/components/ForgotPasswordForm"));
+const ResetPasswordForm = lazy(() => import("@/components/ResetPasswordForm"));
 
 function PageFallback() {
     return (
@@ -115,6 +117,8 @@ function AppRoutes() {
                         <Route path="/signup" element={<RegisterForm />} />
                         <Route path="/verify" element={<VerifyPage />} />
                         <Route path="/login" element={<LoginForm />} />
+                        <Route path="/forgot-password" element={<ForgotPasswordForm />} />
+                        <Route path="/reset" element={<ResetPasswordForm />} />
                         <Route path="/admin/dashboard" element={<ProtectedAdminRoute />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
