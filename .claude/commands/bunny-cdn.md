@@ -1,0 +1,1 @@
+../../.cursor/skills/bunny-cdn/SKILL.md

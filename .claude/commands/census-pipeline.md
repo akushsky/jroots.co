@@ -1,0 +1,1 @@
+../../.cursor/skills/census-pipeline/SKILL.md
