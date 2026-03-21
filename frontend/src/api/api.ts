@@ -21,12 +21,32 @@ apiClient.interceptors.response.use(
     },
 );
 
+export interface SearchFilters {
+    source_id?: number;
+    sort?: "relevance" | "date";
+    mode?: "fuzzy" | "exact";
+}
+
 export const searchObjects = async (
     q: string,
     page: number,
     pageSize: number,
     signal?: AbortSignal,
-) => (await apiClient.get(`/search?q=${encodeURIComponent(q)}&skip=${page * pageSize}&limit=${pageSize}`, {signal})).data;
+    filters?: SearchFilters,
+) => {
+    const params = new URLSearchParams({
+        q,
+        skip: String(page * pageSize),
+        limit: String(pageSize),
+    });
+    if (filters?.source_id) params.set("source_id", String(filters.source_id));
+    if (filters?.sort && filters.sort !== "relevance") params.set("sort", filters.sort);
+    if (filters?.mode && filters.mode !== "fuzzy") params.set("mode", filters.mode);
+    return (await apiClient.get(`/search?${params}`, {signal})).data;
+};
+
+export const fetchSources = async () =>
+    (await apiClient.get("/sources")).data as Array<{ id: number; source_name: string; description: string | null }>;
 
 export const fetchObjects = async (page: number, pageSize: number) =>
     (await apiClient.get(`/admin/objects?skip=${page * pageSize}&limit=${pageSize}`)).data;

@@ -1,15 +1,15 @@
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, or_, text, cast, Float
+from sqlalchemy import select, func, or_, text, cast, Float, literal, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import SearchObject, Image, ImagePurchase, User
-from app.schemas import SearchObjectSchema, PaginatedResults
+from app.models import SearchObject, Image, ImageSource, ImagePurchase, User
+from app.schemas import SearchObjectSchema, ImageSourceSchema, PaginatedResults
 from app.services.auth import get_current_user_optional
 
 logger = logging.getLogger("jroots")
@@ -20,47 +20,72 @@ WORD_SIMILARITY_THRESHOLD = 0.2
 SIMILARITY_THRESHOLD = 0.3
 
 
+@router.get("/sources", response_model=list[ImageSourceSchema])
+async def list_sources(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ImageSource).order_by(ImageSource.source_name)
+    )
+    return result.scalars().all()
+
+
 @router.get("/search", response_model=PaginatedResults)
 async def search(
     q: str,
     skip: int = 0,
     limit: int = 20,  # capped at 100 below
+    source_id: Optional[int] = None,
+    sort: Literal["relevance", "date"] = "relevance",
+    mode: Literal["fuzzy", "exact"] = "fuzzy",
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     limit = min(limit, 100)
     like_query = f"%{q}%"
-    max_lev_distance = min(3, max(1, len(q) // 2))
-    q_len = max(len(q), 1)
 
-    word_sim = func.word_similarity(q, SearchObject.text_content)
-    key_sim = func.similarity(Image.image_key, q)
-    path_sim = func.similarity(Image.image_path, q)
-    lev_dist = func.best_word_levenshtein(SearchObject.text_content, q)
-
-    filter_conditions = or_(
+    like_conditions = or_(
         SearchObject.text_content.ilike(like_query),
         Image.image_key.ilike(like_query),
         Image.image_path.ilike(like_query),
-        word_sim > WORD_SIMILARITY_THRESHOLD,
-        key_sim > SIMILARITY_THRESHOLD,
-        path_sim > SIMILARITY_THRESHOLD,
-        lev_dist <= max_lev_distance,
     )
+
+    if mode == "fuzzy":
+        max_lev_distance = min(3, max(1, len(q) // 2))
+        q_len = max(len(q), 1)
+        word_sim = func.word_similarity(q, SearchObject.text_content)
+        key_sim = func.similarity(Image.image_key, q)
+        path_sim = func.similarity(Image.image_path, q)
+        lev_dist = func.best_word_levenshtein(SearchObject.text_content, q)
+
+        filter_conditions = or_(
+            like_conditions,
+            word_sim > WORD_SIMILARITY_THRESHOLD,
+            key_sim > SIMILARITY_THRESHOLD,
+            path_sim > SIMILARITY_THRESHOLD,
+            lev_dist <= max_lev_distance,
+        )
+        lev_score = 1.0 - cast(lev_dist, Float) / q_len
+        relevance = func.greatest(word_sim, key_sim, path_sim, lev_score).label("relevance")
+    else:
+        filter_conditions = like_conditions
+        relevance = literal(1.0).label("relevance")
+
+    source_filter = Image.image_source_id == source_id if source_id else true()
 
     total = await db.scalar(
-        select(func.count(SearchObject.id)).join(Image).where(filter_conditions)
+        select(func.count(SearchObject.id)).join(Image).where(filter_conditions, source_filter)
     )
 
-    lev_score = 1.0 - cast(lev_dist, Float) / q_len
-    relevance = func.greatest(word_sim, key_sim, path_sim, lev_score).label("relevance")
+    if sort == "date":
+        order = [SearchObject.created_at.desc(), SearchObject.id.asc()]
+    else:
+        order = [text("relevance DESC"), SearchObject.id.asc()]
 
     results = await db.execute(
         select(SearchObject, relevance)
         .join(Image)
         .options(selectinload(SearchObject.image).selectinload(Image.source))
-        .where(filter_conditions)
-        .order_by(text("relevance DESC"), SearchObject.id.asc())
+        .where(filter_conditions, source_filter)
+        .order_by(*order)
         .offset(skip)
         .limit(limit)
     )

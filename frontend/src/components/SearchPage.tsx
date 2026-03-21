@@ -4,8 +4,10 @@ import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import {Button} from "@/components/ui/button";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import Highlighter from "react-highlight-words";
-import {fetchImage, requestAccess, searchObjects} from "@/api/api";
+import {fetchImage, fetchSources, requestAccess, searchObjects} from "@/api/api";
 import {useAuth} from "@/hooks/useAuth";
 import {ImagePopup} from "@/components/shared/ImagePopup";
 import {LoadingOverlay} from "@/components/shared/LoadingOverlay";
@@ -42,8 +44,19 @@ export default function SearchPage() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
+    const [sources, setSources] = useState<Array<{ id: number; source_name: string; description: string | null }>>([]);
+    const [sourceId, setSourceId] = useState<number | undefined>(undefined);
+    const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
+    const [searchMode, setSearchMode] = useState<"fuzzy" | "exact">("fuzzy");
+    const [filtersOpen, setFiltersOpen] = useState(false);
     const pageSize = 20;
     const abortControllerRef = useRef<AbortController | null>(null);
+
+    const activeFilterCount = [
+        sourceId !== undefined,
+        sortBy !== "relevance",
+        searchMode !== "fuzzy",
+    ].filter(Boolean).length;
 
     const sendRequestAccess = async (result: SearchResult) => {
         if (!user) {
@@ -66,8 +79,12 @@ export default function SearchPage() {
     };
 
     useEffect(() => {
+        fetchSources().then(setSources).catch(() => {});
+    }, []);
+
+    useEffect(() => {
         setPage(0);
-    }, [query]);
+    }, [query, sourceId, sortBy, searchMode]);
 
     useEffect(() => {
         const delay = setTimeout(async () => {
@@ -77,7 +94,11 @@ export default function SearchPage() {
                 abortControllerRef.current = controller;
 
                 try {
-                    const res = await searchObjects(query, page, pageSize, controller.signal);
+                    const res = await searchObjects(query, page, pageSize, controller.signal, {
+                        source_id: sourceId,
+                        sort: sortBy,
+                        mode: searchMode,
+                    });
                     setResults(res.items);
                     setTotal(res.total);
                 } catch (err: unknown) {
@@ -93,7 +114,7 @@ export default function SearchPage() {
         }, 300);
 
         return () => clearTimeout(delay);
-    }, [query, page]);
+    }, [query, page, sourceId, sortBy, searchMode]);
 
     const handleImageClick = useCallback(
         async (imageId: number) => {
@@ -134,7 +155,83 @@ export default function SearchPage() {
 
                 <Input placeholder="Поиск..." value={query} onChange={(e) => setQuery(e.target.value)} />
 
-                <div className="mt-6 grid gap-4">
+                <div className="mt-3">
+                    <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+                        <CollapsibleTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2">
+                                Фильтры
+                                {activeFilterCount > 0 && (
+                                    <span className="bg-primary text-primary-foreground text-xs rounded-full px-1.5 py-0.5 min-w-5 text-center">
+                                        {activeFilterCount}
+                                    </span>
+                                )}
+                            </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3 p-4 border rounded-lg space-y-4">
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium">Архив</label>
+                                <Select
+                                    value={sourceId !== undefined ? String(sourceId) : "all"}
+                                    onValueChange={(v) => setSourceId(v === "all" ? undefined : Number(v))}
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Все архивы" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Все архивы</SelectItem>
+                                        {sources.map((s) => (
+                                            <SelectItem key={s.id} value={String(s.id)}>
+                                                {s.source_name}{s.description ? ` (${s.description})` : ""}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium">Сортировка</label>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant={sortBy === "relevance" ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSortBy("relevance")}
+                                    >
+                                        По релевантности
+                                    </Button>
+                                    <Button
+                                        variant={sortBy === "date" ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSortBy("date")}
+                                    >
+                                        По дате
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium">Режим поиска</label>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant={searchMode === "fuzzy" ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSearchMode("fuzzy")}
+                                    >
+                                        Нечёткий
+                                    </Button>
+                                    <Button
+                                        variant={searchMode === "exact" ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSearchMode("exact")}
+                                    >
+                                        Точный
+                                    </Button>
+                                </div>
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
+                </div>
+
+                <div className="mt-4 grid gap-4">
                     {results.map((result) => (
                         <Card key={result.id}>
                             <div className="relative">
