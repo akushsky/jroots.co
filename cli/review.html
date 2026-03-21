@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Census 1926 — Review</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f5f5f5; color: #333; }
+
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: #fff; padding: 12px 24px;
+  display: flex; align-items: center; gap: 20px;
+  border-bottom: 2px solid #e0e0e0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.header h1 { font-size: 18px; color: #c0392b; white-space: nowrap; }
+.header .stats { font-size: 14px; color: #777; }
+.header .actions { margin-left: auto; display: flex; gap: 10px; }
+.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
+.btn-save { background: #3498db; color: #fff; }
+.btn-save:hover { background: #2980b9; }
+.btn-save.saved { background: #27ae60; color: white; }
+.filter-group { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.filter-group label { cursor: pointer; color: #555; }
+
+.container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+
+.card {
+  display: flex; gap: 16px; margin-bottom: 10px;
+  background: #fff; border-radius: 8px;
+  border: 1px solid #ddd;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.card:hover { border-color: #3498db; box-shadow: 0 2px 8px rgba(52,152,219,0.15); }
+.card.not-jewish { opacity: 0.35; }
+.card.not-jewish:hover { opacity: 0.6; }
+.card.edited { border-left: 4px solid #f39c12; }
+
+.card-img-wrap {
+  flex: 0 0 320px; height: 320px;
+  cursor: zoom-in; overflow: hidden;
+  background: #fafafa;
+  display: flex; align-items: center; justify-content: center;
+}
+.card-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+
+.card-body { flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.card-header { display: flex; align-items: center; gap: 12px; }
+.card-num { font-size: 13px; color: #999; font-weight: bold; min-width: 40px; }
+.card-file { font-size: 12px; color: #aaa; font-family: monospace; }
+.card-nat { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #eaf2f8; color: #2471a3; }
+
+.field-group { display: flex; flex-direction: column; gap: 3px; }
+.field-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+.field-main input {
+  width: 100%; padding: 8px 12px;
+  background: #fff; border: 1px solid #ccc; border-radius: 6px;
+  color: #333; font-size: 16px; font-family: inherit;
+  transition: border-color 0.15s;
+}
+.field-main input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,0.2); }
+.field-main input.changed { border-color: #f39c12; background: #fef9e7; }
+
+.field-ref { font-size: 13px; color: #777; padding: 2px 0; }
+.field-ref .label { color: #aaa; }
+.field-ref .conf { font-size: 11px; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+.conf-high { background: #d5f5e3; color: #1e8449; }
+.conf-medium { background: #fef9e7; color: #b7950b; }
+.conf-low { background: #fdedec; color: #c0392b; }
+
+.card-actions { margin-top: auto; display: flex; gap: 8px; }
+.btn-notjew { background: #fadbd8; color: #c0392b; font-size: 12px; padding: 5px 12px; border-radius: 4px; border: 1px solid #f1948a; cursor: pointer; }
+.btn-notjew:hover { background: #f5b7b1; }
+.btn-notjew.active { background: #c0392b; color: white; border-color: #c0392b; }
+
+.lightbox {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.88);
+  justify-content: center; align-items: center;
+  cursor: zoom-out;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 95vw; max-height: 95vh;
+  object-fit: contain; border-radius: 4px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}
+.lightbox-close {
+  position: fixed; top: 16px; right: 24px;
+  font-size: 36px; color: #ccc; cursor: pointer; z-index: 1001;
+}
+.lightbox-close:hover { color: #fff; }
+.lightbox-nav {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  font-size: 54px; color: #888; cursor: pointer; z-index: 1001; user-select: none;
+}
+.lightbox-nav:hover { color: #fff; }
+.lightbox-prev { left: 20px; }
+.lightbox-next { right: 20px; }
+
+.notes { font-size: 11px; color: #aaa; max-height: 36px; overflow: hidden; line-height: 1.4; }
+.notes:hover { max-height: none; color: #777; }
+
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: #27ae60; color: white;
+  padding: 12px 24px; border-radius: 8px;
+  font-size: 14px; z-index: 2000;
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Перепись 1926 — Проверка</h1>
+  <div class="stats" id="stats"></div>
+  <div class="filter-group">
+    <label><input type="checkbox" id="hideNotJew"> Скрыть не-евреев</label>
+    <label><input type="checkbox" id="onlyEdited"> Только редактированные</label>
+  </div>
+  <div class="actions">
+    <button class="btn btn-save" id="saveBtn" onclick="saveAll()">&#128190; Сохранить (Ctrl+S)</button>
+  </div>
+</div>
+
+<div class="container" id="container"></div>
+
+<div class="lightbox" id="lightbox">
+  <span class="lightbox-close" onclick="closeLightbox()">&#10005;</span>
+  <span class="lightbox-nav lightbox-prev" onclick="navLightbox(-1)">&#8249;</span>
+  <span class="lightbox-nav lightbox-next" onclick="navLightbox(1)">&#8250;</span>
+  <img id="lightboxImg" src="">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var DATA = [];
+var currentLightbox = -1;
+var hasChanges = false;
+
+function loadData() {
+  fetch('/api/data').then(function(r) { return r.json(); }).then(function(d) {
+    DATA = d;
+    render();
+  });
+}
+
+function esc(s) {
+  if (!s) return '';
+  var div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function render() {
+  var hideNJ = document.getElementById('hideNotJew').checked;
+  var onlyEd = document.getElementById('onlyEdited').checked;
+  var container = document.getElementById('container');
+  var html = '';
+  var shown = 0;
+  var notJewCount = 0;
+  var editedCount = 0;
+
+  for (var i = 0; i < DATA.length; i++) {
+    if (DATA[i].not_jewish) notJewCount++;
+    if (DATA[i]._edited) editedCount++;
+  }
+
+  for (var i = 0; i < DATA.length; i++) {
+    var d = DATA[i];
+    if (hideNJ && d.not_jewish) continue;
+    if (onlyEd && !d._edited) continue;
+    shown++;
+
+    var isNJ = d.not_jewish ? 'not-jewish' : '';
+    var isEd = d._edited ? 'edited' : '';
+    var confClass = 'conf-' + (d.confidence || 'low');
+
+    html += '<div class="card ' + isNJ + ' ' + isEd + '" id="card-' + i + '">';
+    html += '  <div class="card-img-wrap" onclick="openLightbox(' + i + ')">';
+    html += '    <img src="/img/' + esc(d.filename) + '" loading="lazy">';
+    html += '  </div>';
+    html += '  <div class="card-body">';
+    html += '    <div class="card-header">';
+    html += '      <span class="card-num">#' + (i + 1) + '</span>';
+    html += '      <span class="card-file">' + esc(d.filename) + '</span>';
+    html += '      <span class="card-nat">' + esc(d.nationality || '?') + '</span>';
+    html += '      <span class="conf ' + confClass + '">' + (d.confidence || '') + '</span>';
+    html += '    </div>';
+    html += '    <div class="field-group">';
+    html += '      <div class="field-label">ФИО (Claude)</div>';
+    html += '      <div class="field-main">';
+    html += '        <input type="text" value="' + esc(d.name || '') + '" data-idx="' + i + '" data-orig="' + esc(d._orig_name || d.name || '') + '" oninput="onEdit(this,' + i + ')">';
+    html += '      </div>';
+    html += '    </div>';
+    if (d.notes) {
+      html += '    <div class="notes">' + esc(d.notes) + '</div>';
+    }
+    html += '    <div class="card-actions">';
+    html += '      <button class="btn-notjew ' + (d.not_jewish ? 'active' : '') + '" onclick="toggleNotJew(' + i + ')">';
+    html += d.not_jewish ? '&#10007; Помечен как не-еврей' : 'Не еврей';
+    html += '      </button>';
+    html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+  document.getElementById('stats').textContent =
+    'Показано: ' + shown + '/' + DATA.length + ' | Не-евреев: ' + notJewCount + ' | Ред.: ' + editedCount;
+}
+
+function onEdit(input, idx) {
+  var orig = input.dataset.orig;
+  var changed = input.value !== orig;
+  input.className = changed ? 'changed' : '';
+  DATA[idx].name = input.value;
+  DATA[idx]._edited = changed;
+  hasChanges = true;
+  var btn = document.getElementById('saveBtn');
+  btn.classList.remove('saved');
+  btn.innerHTML = '&#128190; Сохранить (Ctrl+S)';
+}
+
+function toggleNotJew(idx) {
+  DATA[idx].not_jewish = !DATA[idx].not_jewish;
+  hasChanges = true;
+  render();
+}
+
+function saveAll() {
+  var btn = document.getElementById('saveBtn');
+  btn.textContent = 'Сохранение...';
+  fetch('/api/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(DATA)
+  }).then(function(r) { return r.json(); }).then(function(result) {
+    if (result.ok) {
+      btn.textContent = 'Сохранено!';
+      btn.classList.add('saved');
+      hasChanges = false;
+      showToast('Сохранено: ' + result.count + ' записей');
+    }
+  }).catch(function(e) {
+    btn.textContent = 'Ошибка!';
+    showToast('Ошибка: ' + e.message);
+  });
+}
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 2500);
+}
+
+function openLightbox(idx) {
+  currentLightbox = idx;
+  document.getElementById('lightboxImg').src = '/img/' + DATA[idx].filename;
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  currentLightbox = -1;
+}
+
+function navLightbox(dir) {
+  var next = currentLightbox + dir;
+  if (next < 0) next = DATA.length - 1;
+  if (next >= DATA.length) next = 0;
+  openLightbox(next);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { closeLightbox(); return; }
+  var lb = document.getElementById('lightbox');
+  if (lb.classList.contains('open')) {
+    if (e.key === 'ArrowLeft') navLightbox(-1);
+    if (e.key === 'ArrowRight') navLightbox(1);
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveAll();
+  }
+});
+
+document.getElementById('lightbox').addEventListener('click', function(e) {
+  if (e.target === document.getElementById('lightbox')) closeLightbox();
+});
+
+document.getElementById('hideNotJew').addEventListener('change', render);
+document.getElementById('onlyEdited').addEventListener('change', render);
+
+window.addEventListener('beforeunload', function(e) {
+  if (hasChanges) { e.preventDefault(); e.returnValue = ''; }
+});
+
+loadData();
+</script>
+</body>
+</html>
