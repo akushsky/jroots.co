@@ -45,3 +45,10 @@ repos:
         language: system
         files: ^frontend/package
         pass_filenames: false
+
+      - id: pip-audit
+        name: "Backend: pip-audit (vulnerabilities)"
+        entry: bash -c "cd backend && python3 -c \"import tomllib,pathlib; d=tomllib.loads(pathlib.Path('poetry.lock').read_text()); f=open('/tmp/_br.txt','w'); [f.write(p['name']+'=='+p['version']+chr(10)) for p in d['package']]; f.close()\" && pip-audit -r /tmp/_br.txt"
+        language: system
+        files: ^backend/(pyproject\.toml|poetry\.lock)
+        pass_filenames: false
