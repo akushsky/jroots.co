@@ -58,7 +58,7 @@ export default function ResetPasswordForm() {
                 <Card>
                     <CardContent className="p-6 space-y-4 text-center">
                         <StatusMessage type="error" message="Ссылка для сброса пароля недействительна." />
-                        <Link to="/forgot-password" className="text-sm font-medium text-indigo-600 hover:underline">
+                        <Link to="/forgot-password" className="text-sm font-medium text-accent hover:underline">
                             Запросить новую ссылку
                         </Link>
                     </CardContent>
@@ -72,7 +72,7 @@ export default function ResetPasswordForm() {
             <Card>
                 <CardContent className="p-6 space-y-4">
                     <div className="text-center">
-                        <Link to="/login" className="text-sm font-medium text-indigo-600 hover:underline">
+                        <Link to="/login" className="text-sm font-medium text-accent hover:underline">
                             &larr; Назад ко входу
                         </Link>
                     </div>
@@ -98,7 +98,7 @@ export default function ResetPasswordForm() {
                             <div className="space-y-2">
                                 <StatusMessage type="success" message={success} />
                                 <p className="text-center text-sm">
-                                    <Link to="/login" className="font-semibold text-indigo-600 hover:underline">
+                                    <Link to="/login" className="font-semibold text-accent hover:underline">
                                         Войти с новым паролем
                                     </Link>
                                 </p>

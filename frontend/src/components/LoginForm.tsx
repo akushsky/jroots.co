@@ -41,7 +41,7 @@ export default function LoginForm() {
             <Card>
                 <CardContent className="p-6 space-y-4">
                     <div className="text-center">
-                        <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+                        <Link to="/" className="text-sm font-medium text-accent hover:underline">
                             &larr; На главную
                         </Link>
                     </div>
@@ -64,7 +64,7 @@ export default function LoginForm() {
                         />
                         {error && <StatusMessage type="error" message={error} />}
                         <div className="text-right">
-                            <Link to="/forgot-password" className="text-sm text-indigo-600 hover:underline">
+                            <Link to="/forgot-password" className="text-sm text-accent hover:underline">
                                 Забыли пароль?
                             </Link>
                         </div>
@@ -72,9 +72,9 @@ export default function LoginForm() {
                             {loading ? "Вход..." : "Войти"}
                         </Button>
                     </form>
-                    <p className="text-center text-sm text-gray-600">
+                    <p className="text-center text-sm text-muted-foreground">
                         Нет аккаунта?{" "}
-                        <Link to="/signup" className="font-semibold text-indigo-600 hover:underline">
+                        <Link to="/signup" className="font-semibold text-accent hover:underline">
                             Зарегистрироваться
                         </Link>
                     </p>

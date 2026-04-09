@@ -55,7 +55,7 @@ export default function VerifyPage() {
                 <CardContent className="p-6">
                     {status === "loading" && <p>Проверка ссылки...</p>}
                     {status === "success" && (
-                        <Alert variant="default" className="flex gap-2 items-start border-green-500 text-green-700">
+                        <Alert variant="default" className="flex gap-2 items-start border-accent text-accent dark:text-green-300">
                             <CheckCircle className="mt-1"/>
                             <div>
                                 <AlertTitle>Успех!</AlertTitle>

@@ -1,5 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
+import {Search} from "lucide-react";
+import {AnimatePresence, motion} from "motion/react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
 import {Button} from "@/components/ui/button";
@@ -33,6 +35,8 @@ interface SearchResult {
     } | null;
     requested?: boolean;
 }
+
+const EXAMPLE_SEARCHES = ["Рабинович", "Зильберштейн", "Бердичев", "Житомир"];
 
 export default function SearchPage() {
     const navigate = useNavigate();
@@ -128,46 +132,66 @@ export default function SearchPage() {
     );
 
     const pageCount = Math.ceil(total / pageSize);
+    const showEmptyState = !query.trim() && results.length === 0;
 
     return (
         <TooltipProvider>
-            <div className="max-w-3xl mx-auto mt-10">
-                <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
-                    <h1 className="text-xl font-semibold">Ревизия внезапных евреев</h1>
+            <div className="max-w-3xl mx-auto px-4">
+                {/* Header */}
+                <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
+                    <div>
+                        <h1 className="text-4xl font-bold tracking-tight">
+                            JRoots
+                        </h1>
+                        <p className="text-muted-foreground mt-1 text-sm">
+                            Поиск по еврейским архивным материалам
+                        </p>
+                    </div>
                     {user ? (
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                             <div className="text-right leading-tight">
-                                <div className="text-xs text-gray-500">Вы вошли как</div>
-                                <div className="font-medium">{user.username}</div>
+                                <div className="font-medium text-foreground">{user.username}</div>
                                 <div className="text-xs">{user.email}</div>
                             </div>
-                            <Button variant="outline" onClick={logout}>
+                            <Button variant="outline" size="sm" onClick={logout}>
                                 Выйти
                             </Button>
                         </div>
                     ) : (
                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => navigate("/login")}>Вход</Button>
-                            <Button onClick={() => navigate("/signup")}>Регистрация</Button>
+                            <Button variant="outline" size="sm" onClick={() => navigate("/login")}>Вход</Button>
+                            <Button size="sm" onClick={() => navigate("/signup")}>Регистрация</Button>
                         </div>
                     )}
                 </div>
 
-                <Input placeholder="Поиск..." value={query} onChange={(e) => setQuery(e.target.value)} />
+                <div className="border-b border-border mb-6" />
 
+                {/* Search input */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+                    <Input
+                        placeholder="Введите фамилию, имя или название документа..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        className="h-12 text-base pl-11 bg-card"
+                    />
+                </div>
+
+                {/* Filters */}
                 <div className="mt-3">
                     <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
                         <CollapsibleTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2">
                                 Фильтры
                                 {activeFilterCount > 0 && (
-                                    <span className="bg-primary text-primary-foreground text-xs rounded-full px-1.5 py-0.5 min-w-5 text-center">
+                                    <span className="bg-accent text-accent-foreground text-xs rounded-full px-1.5 py-0.5 min-w-5 text-center">
                                         {activeFilterCount}
                                     </span>
                                 )}
                             </Button>
                         </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-3 p-4 border rounded-lg space-y-4">
+                        <CollapsibleContent className="mt-3 p-4 border rounded-lg space-y-4 bg-card">
                             <div className="space-y-1">
                                 <label className="text-sm font-medium">Архив</label>
                                 <Select
@@ -231,87 +255,144 @@ export default function SearchPage() {
                     </Collapsible>
                 </div>
 
-                <div className="mt-4 grid gap-4">
-                    {results.map((result) => (
-                        <Card key={result.id}>
-                            <div className="relative">
-                                <CardContent className="flex gap-4 items-center p-4">
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <img
-                                                src={result.thumbnail_url}
-                                                alt={result.text_content}
-                                                className={`w-20 h-20 object-cover rounded cursor-pointer ${user?.is_verified ? "" : "opacity-60"}`}
-                                                onClick={() => result.image_id && handleImageClick(result.image_id)}
-                                            />
-                                        </TooltipTrigger>
-                                        {!user ? (
-                                            <TooltipContent>
-                                                <p>Войдите или зарегистрируйтесь, чтобы открыть полное изображение</p>
-                                            </TooltipContent>
-                                        ) : !user.is_verified ? (
-                                            <TooltipContent>
-                                                <p>Подтвердите свою учетную запись, чтобы открыть полное изображение</p>
-                                            </TooltipContent>
-                                        ) : null}
-                                    </Tooltip>
-                                    <div>
-                                        <p>
-                                            <Highlighter
-                                                searchWords={[query]}
-                                                autoEscape
-                                                textToHighlight={result.text_content}
-                                            />
-                                        </p>
-                                        <div className="text-sm text-muted-foreground">
-                                            {result.image?.image_path === "********" ? (
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <span className="italic cursor-help underline decoration-dotted mr-1">
-                                                            Шифр дела скрыт
-                                                        </span>
-                                                    </TooltipTrigger>
+                {/* Empty state */}
+                {showEmptyState && (
+                    <motion.div
+                        initial={{opacity: 0, y: 8}}
+                        animate={{opacity: 1, y: 0}}
+                        transition={{duration: 0.4}}
+                        className="text-center py-16"
+                    >
+                        <p className="text-muted-foreground mb-6">
+                            Единая база данных по архивным материалам еврейских общин
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                            {EXAMPLE_SEARCHES.map((term) => (
+                                <button
+                                    key={term}
+                                    onClick={() => setQuery(term)}
+                                    className="px-4 py-1.5 text-sm rounded-full border border-border bg-card hover:bg-accent hover:text-accent-foreground transition-colors"
+                                >
+                                    {term}
+                                </button>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Results */}
+                <div className="mt-4 grid gap-3">
+                    {total > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                            {total} {(() => {
+                                const n = total % 100;
+                                const d = total % 10;
+                                if (n >= 11 && n <= 19) return "результатов";
+                                if (d === 1) return "результат";
+                                if (d >= 2 && d <= 4) return "результата";
+                                return "результатов";
+                            })()}
+                        </p>
+                    )}
+                    <AnimatePresence>
+                        {results.map((result, i) => (
+                            <motion.div
+                                key={result.id}
+                                initial={{opacity: 0, y: 6}}
+                                animate={{opacity: 1, y: 0}}
+                                transition={{duration: 0.25, delay: i * 0.03}}
+                            >
+                                <Card className="overflow-hidden hover:shadow-md transition-shadow">
+                                    <div className="relative">
+                                        <CardContent className="flex gap-4 items-start p-4">
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <img
+                                                        src={result.thumbnail_url}
+                                                        alt={result.text_content}
+                                                        className={`w-16 h-16 object-cover rounded border border-border shrink-0 cursor-pointer ${user?.is_verified ? "" : "opacity-50"}`}
+                                                        onClick={() => result.image_id && handleImageClick(result.image_id)}
+                                                    />
+                                                </TooltipTrigger>
+                                                {!user ? (
                                                     <TooltipContent>
-                                                        <p>Запросите доступ, чтобы увидеть шифр</p>
+                                                        <p>Войдите или зарегистрируйтесь, чтобы открыть полное изображение</p>
                                                     </TooltipContent>
-                                                </Tooltip>
+                                                ) : !user.is_verified ? (
+                                                    <TooltipContent>
+                                                        <p>Подтвердите свою учетную запись, чтобы открыть полное изображение</p>
+                                                    </TooltipContent>
+                                                ) : null}
+                                            </Tooltip>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold text-lg font-[family-name:var(--font-display)]">
+                                                    <Highlighter
+                                                        searchWords={[query]}
+                                                        autoEscape
+                                                        textToHighlight={result.text_content}
+                                                    />
+                                                </p>
+                                                <div className="text-sm text-muted-foreground mt-1 space-y-0.5">
+                                                    <div>
+                                                        {result.image?.image_path === "********" ? (
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <span className="italic cursor-help underline decoration-dotted">
+                                                                        Шифр дела скрыт
+                                                                    </span>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    <p>Запросите доступ, чтобы увидеть шифр</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        ) : (
+                                                            <Highlighter
+                                                                searchWords={[query]}
+                                                                autoEscape
+                                                                textToHighlight={result.image?.image_path ?? ""}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {result.image?.source && (
+                                                            <span className="inline-block text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
+                                                                {result.image.source.source_name}
+                                                            </span>
+                                                        )}
+                                                        <Highlighter
+                                                            searchWords={[query]}
+                                                            autoEscape
+                                                            textToHighlight={result.image?.image_key ?? ""}
+                                                            className="text-xs"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                        <div className="absolute top-3 right-3">
+                                            {result.requested ? (
+                                                <span className="text-xs px-3 py-1 rounded-full bg-accent text-accent-foreground">
+                                                    Запрос отправлен
+                                                </span>
                                             ) : (
-                                                <Highlighter
-                                                    searchWords={[query]}
-                                                    autoEscape
-                                                    textToHighlight={(result.image?.image_path ?? "") + " "}
-                                                />
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="text-xs px-3 py-1 h-auto rounded-full"
+                                                    onClick={() => sendRequestAccess(result)}
+                                                >
+                                                    Запросить доступ
+                                                </Button>
                                             )}
-                                            <Highlighter
-                                                searchWords={[query]}
-                                                autoEscape
-                                                textToHighlight={`(${result.image?.source?.source_name ?? ""}) ${result.image?.image_key ?? ""}`}
-                                            />
                                         </div>
                                     </div>
-                                </CardContent>
-                                <div className="absolute top-2 right-2 z-10">
-                                    {result.requested ? (
-                                        <div className="bg-green-600 text-white text-xs px-3 py-1 rounded-full shadow flex items-center gap-1">
-                                            Запрос отправлен
-                                        </div>
-                                    ) : (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="text-xs px-3 py-1 h-auto rounded-full"
-                                            onClick={() => sendRequestAccess(result)}
-                                        >
-                                            Запросить доступ
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        </Card>
-                    ))}
+                                </Card>
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
 
                     {results.length === 0 && query.trim() && (
-                        <div className="text-center text-gray-500 py-6">
+                        <div className="text-center text-muted-foreground py-10">
                             Нет результатов по запросу &laquo;{query}&raquo;
                         </div>
                     )}
@@ -323,7 +404,9 @@ export default function SearchPage() {
                 <ImagePopup imageUrl={popupImage} onClose={() => setPopupImage(null)} />
 
                 {successMessage && (
-                    <div className="text-green-600 text-center font-medium mt-4">{successMessage}</div>
+                    <div className="text-center font-medium mt-4 text-sm text-accent">
+                        {successMessage}
+                    </div>
                 )}
             </div>
         </TooltipProvider>

@@ -65,7 +65,7 @@ export default function RegisterForm() {
             <Card>
                 <CardContent className="p-6 space-y-4">
                     <div className="text-center">
-                        <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+                        <Link to="/" className="text-sm font-medium text-accent hover:underline">
                             &larr; На главную
                         </Link>
                     </div>
@@ -112,9 +112,9 @@ export default function RegisterForm() {
                             </Button>
                         </form>
                     )}
-                    <p className="text-center text-sm text-gray-600">
+                    <p className="text-center text-sm text-muted-foreground">
                         Уже есть аккаунт?{" "}
-                        <Link to="/login" className="font-semibold text-indigo-600 hover:underline">
+                        <Link to="/login" className="font-semibold text-accent hover:underline">
                             Войти
                         </Link>
                     </p>

@@ -38,13 +38,13 @@ export default function ForgotPasswordForm() {
             <Card>
                 <CardContent className="p-6 space-y-4">
                     <div className="text-center">
-                        <Link to="/login" className="text-sm font-medium text-indigo-600 hover:underline">
+                        <Link to="/login" className="text-sm font-medium text-accent hover:underline">
                             &larr; Назад ко входу
                         </Link>
                     </div>
 
                     <h2 className="text-xl font-semibold text-center">Восстановление пароля</h2>
-                    <p className="text-sm text-gray-600 text-center">
+                    <p className="text-sm text-muted-foreground text-center">
                         Введите email, указанный при регистрации, и мы отправим ссылку для сброса пароля.
                     </p>
                     <form onSubmit={handleSubmit} className="space-y-4" noValidate>

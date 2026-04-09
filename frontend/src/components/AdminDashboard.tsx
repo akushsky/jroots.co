@@ -294,7 +294,7 @@ function FileDropZone({dragOver, file, onDragOver, onDragLeave, onDrop, inputId}
     return (
         <div
             className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition-all duration-200 cursor-pointer ${
-                dragOver ? "border-blue-400 bg-blue-50" : "border-gray-300"
+                dragOver ? "border-accent bg-accent/10" : "border-border"
             }`}
             onDragOver={(e) => {
                 e.preventDefault();
@@ -310,7 +310,7 @@ function FileDropZone({dragOver, file, onDragOver, onDragLeave, onDrop, inputId}
             onClick={() => document.getElementById(inputId)?.click()}
         >
             {file ? (
-                <div className="text-sm text-gray-800">
+                <div className="text-sm text-foreground">
                     <img
                         src={URL.createObjectURL(file)}
                         alt="Предпросмотр"
@@ -319,7 +319,7 @@ function FileDropZone({dragOver, file, onDragOver, onDragLeave, onDrop, inputId}
                     {file.name}
                 </div>
             ) : (
-                <div className="text-gray-500">Перетащите изображение сюда или нажмите, чтобы выбрать файл</div>
+                <div className="text-muted-foreground">Перетащите изображение сюда или нажмите, чтобы выбрать файл</div>
             )}
         </div>
     );
