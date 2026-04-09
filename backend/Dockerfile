@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /app
 
@@ -7,9 +7,9 @@ COPY ./backend/pyproject.toml ./backend/poetry.lock ./
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir "poetry>=1.8,<2" \
+RUN pip install --no-cache-dir "poetry>=2.0,<3" \
     && poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-dev
+    && poetry install --no-interaction --only main
 
 COPY ./backend /app
 RUN chmod +x /app/entrypoint.sh

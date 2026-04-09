@@ -1,10 +1,10 @@
-FROM node:20-alpine as builder
+FROM node:22-alpine AS builder
 ARG CDN_BASE=/
 ENV CDN_BASE=${CDN_BASE}
 
 WORKDIR /app
 COPY ./frontend /app
-RUN npm install && npm run build
+RUN npm ci && npm run build
 
 # Serve with nginx
 FROM nginx:alpine
