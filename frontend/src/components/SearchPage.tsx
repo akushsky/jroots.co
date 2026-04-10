@@ -18,6 +18,7 @@ import {Pagination} from "@/components/shared/Pagination";
 interface ImageSource {
     id: number;
     source_name: string;
+    description: string | null;
 }
 
 interface SearchResult {
@@ -355,9 +356,18 @@ export default function SearchPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         {result.image?.source && (
-                                                            <span className="inline-block text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
-                                                                {result.image.source.source_name}
-                                                            </span>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <span className="inline-block text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground cursor-help">
+                                                                        {result.image.source.source_name}
+                                                                    </span>
+                                                                </TooltipTrigger>
+                                                                {result.image.source.description && (
+                                                                    <TooltipContent>
+                                                                        <p>{result.image.source.description}</p>
+                                                                    </TooltipContent>
+                                                                )}
+                                                            </Tooltip>
                                                         )}
                                                         <Highlighter
                                                             searchWords={[query]}
