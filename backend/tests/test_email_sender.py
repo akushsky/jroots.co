@@ -24,8 +24,12 @@ async def test_send_email_failure_raises_exception():
     respx.post("https://api.resend.com/emails").mock(
         return_value=httpx.Response(400, text="Bad Request")
     )
+    # Mock telegram alert (best-effort, may not be called if no token)
+    respx.post(url__regex=r"api\.telegram\.org").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
 
-    with pytest.raises(RuntimeError, match="Failed to send email"):
+    with pytest.raises(RuntimeError, match="Resend API error"):
         await send_email("test@example.com", "Test Subject", "<p>Hello</p>")
 
 
