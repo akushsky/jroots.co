@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from datetime import timedelta, datetime, timezone
 
-from jose import jwt
+import jwt
 from fastapi import HTTPException
 
 from app.services.auth import (

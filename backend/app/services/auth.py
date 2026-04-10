@@ -5,7 +5,8 @@ from typing import Optional
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +81,7 @@ def verify_token(token: str) -> str:
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid token")
         return email
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=400, detail="Invalid token")
 
 
@@ -107,7 +108,7 @@ def verify_reset_token(token: str) -> tuple[str, str]:
         if not email or not hash_prefix or payload.get("purpose") != "reset":
             raise HTTPException(status_code=400, detail="Недействительная ссылка для сброса пароля")
         return email, hash_prefix
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=400, detail="Ссылка для сброса пароля истекла или недействительна")
 
 
@@ -122,7 +123,7 @@ async def resolve_user_from_token(token: Optional[str], db: AsyncSession) -> Opt
             return None
         result = await db.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
-    except JWTError:
+    except PyJWTError:
         return None
 
 
