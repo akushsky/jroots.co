@@ -71,13 +71,22 @@ export default function RegisterForm() {
                     </div>
 
                     <h2 className="text-xl font-semibold text-center">Регистрация</h2>
-                    {successMessage && <StatusMessage type="success" message={successMessage} />}
+                    {successMessage && (
+                        <div className="text-center space-y-3 py-4">
+                            <h3 className="text-lg font-semibold text-green-600 dark:text-green-400">
+                                Регистрация прошла успешно!
+                            </h3>
+                            <p className="text-sm font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 rounded-lg">
+                                Проверьте почту и перейдите по ссылке для подтверждения аккаунта.
+                            </p>
+                        </div>
+                    )}
                     {errorMessage && <StatusMessage type="error" message={errorMessage} />}
                     {!successMessage && (
                         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                             <Input
                                 type="text"
-                                placeholder="Имя"
+                                placeholder="Логин"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 required

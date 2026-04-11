@@ -82,7 +82,7 @@ CREATE TABLE search_objects
 CREATE TABLE users
 (
     id                SERIAL PRIMARY KEY,
-    username          VARCHAR(150) UNIQUE NOT NULL,
+    username          VARCHAR(150) NOT NULL,
     email             VARCHAR(255) UNIQUE NOT NULL,
     hashed_password   VARCHAR(255)        NOT NULL,
     telegram_username VARCHAR(150),

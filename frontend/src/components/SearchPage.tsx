@@ -64,12 +64,6 @@ export default function SearchPage() {
     ].filter(Boolean).length;
 
     const sendRequestAccess = async (result: SearchResult) => {
-        if (!user) {
-            setSuccessMessage("Пожалуйста, войдите, чтобы отправить запрос.");
-            setTimeout(() => setSuccessMessage(null), 5000);
-            return;
-        }
-
         try {
             await requestAccess(result.image_id, result.text_content);
             setSuccessMessage("Запрос успешно отправлен администратору.");
@@ -379,22 +373,24 @@ export default function SearchPage() {
                                                 </div>
                                             </div>
                                         </CardContent>
-                                        <div className="absolute top-3 right-3">
-                                            {result.requested ? (
-                                                <span className="text-xs px-3 py-1 rounded-full bg-accent text-accent-foreground">
-                                                    Запрос отправлен
-                                                </span>
-                                            ) : (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="text-xs px-3 py-1 h-auto rounded-full"
-                                                    onClick={() => sendRequestAccess(result)}
-                                                >
-                                                    Запросить доступ
-                                                </Button>
-                                            )}
-                                        </div>
+                                        {user && result.image?.image_path === "********" && (
+                                            <div className="absolute top-3 right-3">
+                                                {result.requested ? (
+                                                    <span className="text-xs px-3 py-1 rounded-full bg-accent text-accent-foreground">
+                                                        Запрос отправлен
+                                                    </span>
+                                                ) : (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="text-xs px-3 py-1 h-auto rounded-full"
+                                                        onClick={() => sendRequestAccess(result)}
+                                                    >
+                                                        Запросить доступ
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </Card>
                             </motion.div>

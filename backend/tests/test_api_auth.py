@@ -29,7 +29,7 @@ async def test_register_duplicate_email(client, db_session):
     assert "email" in response.json()["detail"].lower()
 
 
-async def test_register_duplicate_username(client, db_session):
+async def test_register_duplicate_username_allowed(client, db_session):
     await create_user(db_session, username="taken")
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True), \
          patch("app.routers.auth.send_email", new_callable=AsyncMock):
@@ -39,8 +39,7 @@ async def test_register_duplicate_username(client, db_session):
             "password": "securepass123",
             "captcha_token": "fake-token",
         })
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Имя пользователя уже занято"
+    assert response.status_code == 200
 
 
 async def test_register_strips_whitespace(client, db_session):

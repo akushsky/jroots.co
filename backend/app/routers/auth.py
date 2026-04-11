@@ -42,10 +42,6 @@ async def register_user(
     if existing_user.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Этот email уже зарегистрирован")
 
-    existing_username = await db.execute(select(User).where(User.username == data.username))
-    if existing_username.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Имя пользователя уже занято")
-
     settings = get_settings()
     verification_token = generate_verification_token(str(data.email))
     verification_url = f"{settings.frontend_url}/verify?token={verification_token}"
@@ -64,7 +60,7 @@ async def register_user(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Имя пользователя или email уже заняты")
+        raise HTTPException(status_code=409, detail="Этот email уже зарегистрирован")
 
     logger.info("User %s registered with email %s", data.username, data.email)
 
