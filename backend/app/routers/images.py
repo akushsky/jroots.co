@@ -4,7 +4,6 @@ import logging
 import os
 from typing import Optional
 
-from PIL import Image as PILImage, ImageOps
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
@@ -66,17 +65,6 @@ async def get_image(
         return Response(status_code=304)
 
     image_bytes = await asyncio.to_thread(_load_image_bytes, image)
-    original = PILImage.open(io.BytesIO(image_bytes))
-    original = ImageOps.exif_transpose(original).convert("RGBA")
-
-    result = original if has_access else await apply_watermark(original)
-
-    if result.mode != "RGB":
-        result = result.convert("RGB")
-
-    buffer = io.BytesIO()
-    result.save(buffer, format="JPEG")
-    buffer.seek(0)
 
     headers = {
         "ETag": etag,
@@ -88,6 +76,13 @@ async def get_image(
         image.image_path, image.image_key, current_user.email,
     )
 
+    if has_access:
+        return StreamingResponse(io.BytesIO(image_bytes), media_type="image/jpeg", headers=headers)
+
+    result = await apply_watermark(image_bytes)
+    buffer = io.BytesIO()
+    result.save(buffer, format="JPEG", quality=85)
+    buffer.seek(0)
     return StreamingResponse(buffer, media_type="image/jpeg", headers=headers)
 
 

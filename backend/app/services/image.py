@@ -18,8 +18,18 @@ from app.models import Image, ImagePurchase, SearchObject
 logger = logging.getLogger("jroots")
 
 
-def _apply_watermark_sync(original: PILImage.Image) -> PILImage.Image:
-    watermark = PIL.Image.new("RGBA", original.size, (255, 255, 255, 0))
+MAX_WATERMARK_DIM = 1600
+
+
+def _apply_watermark_sync(image_bytes: bytes) -> PILImage.Image:
+    original = PILImage.open(BytesIO(image_bytes))
+    original = ImageOps.exif_transpose(original)
+
+    # Resize to limit memory usage before RGBA conversion
+    if max(original.size) > MAX_WATERMARK_DIM:
+        original.thumbnail((MAX_WATERMARK_DIM, MAX_WATERMARK_DIM))
+
+    original = original.convert("RGBA")
 
     font_size = max(original.width // 20, 30)
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -45,14 +55,13 @@ def _apply_watermark_sync(original: PILImage.Image) -> PILImage.Image:
 
     for x in range(-rotated_watermark.width, original.width + rotated_watermark.width, spacing_x):
         for y in range(-rotated_watermark.height, original.height + rotated_watermark.height, spacing_y):
-            watermark.alpha_composite(rotated_watermark, (x, y))
+            original.alpha_composite(rotated_watermark, (x, y))
 
-    watermarked = PIL.Image.alpha_composite(original, watermark).convert("RGB")
-    return watermarked
+    return original.convert("RGB")
 
 
-async def apply_watermark(original: PILImage.Image) -> PILImage.Image:
-    return await asyncio.to_thread(_apply_watermark_sync, original)
+async def apply_watermark(image_bytes: bytes) -> PILImage.Image:
+    return await asyncio.to_thread(_apply_watermark_sync, image_bytes)
 
 
 def generate_etag(image: Image, has_access: bool) -> str:
