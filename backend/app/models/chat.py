@@ -1,5 +1,6 @@
 from sqlalchemy import (
     Column,
+    Index,
     Integer,
     String,
     Text,
@@ -27,6 +28,22 @@ class ChatSession(Base):
     status = Column(String(32), default="open", server_default="open")
     created_at = Column(DateTime, server_default=func.now())
     closed_at = Column(DateTime, nullable=True)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_session_created", "session_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(
+        Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    role = Column(String(16), nullable=False)  # user | assistant | system
+    content = Column(Text, nullable=False)
+    tokens = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class Search(Base):

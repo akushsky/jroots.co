@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     cdn_base: str = ""
 
+    moonshot_api_key: str = ""
+    moonshot_base_url: str = "https://api.moonshot.ai/v1"
+    llm_model_main: str = "kimi-k2.6"
+    llm_model_escalation: str = "kimi-k3"
+    llm_token_cap_per_session: int = 200_000
+    llm_price_in_per_1m: float = 0.95
+    llm_price_out_per_1m: float = 4.0
+    free_daily_budget_usd: float = 20.0
+    free_sessions_per_day: int = 2
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

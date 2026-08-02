@@ -12,6 +12,7 @@ const VerifyPage = lazy(() => import("@/components/VerifyPage"));
 const LoginForm = lazy(() => import("@/components/LoginForm"));
 const ForgotPasswordForm = lazy(() => import("@/components/ForgotPasswordForm"));
 const ResetPasswordForm = lazy(() => import("@/components/ResetPasswordForm"));
+const ChatPage = lazy(() => import("@/components/chat/ChatPage"));
 
 function PageFallback() {
     return (
@@ -85,6 +86,16 @@ function ProtectedAdminRoute() {
     );
 }
 
+function ProtectedChatRoute() {
+    const {isAuthenticated} = useAuth();
+    if (!isAuthenticated) return <Navigate to="/login" />;
+    return (
+        <Suspense fallback={<PageFallback />}>
+            <ChatPage />
+        </Suspense>
+    );
+}
+
 function NotFound() {
     return (
         <div className="max-w-md mx-auto mt-20 text-center">
@@ -120,6 +131,7 @@ function AppRoutes() {
                         <Route path="/forgot-password" element={<ForgotPasswordForm />} />
                         <Route path="/reset" element={<ResetPasswordForm />} />
                         <Route path="/admin/dashboard" element={<ProtectedAdminRoute />} />
+                        <Route path="/chat" element={<ProtectedChatRoute />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
                 </Suspense>

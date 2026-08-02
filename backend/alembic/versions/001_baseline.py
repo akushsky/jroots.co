@@ -5,10 +5,8 @@ Revises:
 Create Date: 2026-03-04
 
 """
-from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
+from typing import Sequence, Union
 
 revision: str = "001_baseline"
 down_revision: Union[str, None] = None
