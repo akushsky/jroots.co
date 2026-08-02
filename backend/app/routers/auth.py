@@ -20,6 +20,7 @@ from app.services.auth import (
     verify_token,
 )
 from app.rate_limit import limiter
+from app.services.credits import grant_signup_bonus
 from app.services.email import send_email
 
 logger = logging.getLogger("jroots")
@@ -77,7 +78,9 @@ async def register_user(
         html_content=html,
     )
 
-    return {"message": "Регистрация прошла успешно. Пожалуйста, проверьте вашу почту для подтверждения."}
+    return {
+        "message": "Регистрация прошла успешно. Пожалуйста, проверьте вашу почту для подтверждения."
+    }
 
 
 @router.get("/verify")
@@ -93,6 +96,15 @@ async def verify_user(token: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     logger.info("User %s verified their email %s", user.username, user.email)
+
+    try:
+        bonus = await grant_signup_bonus(db, user.id)
+        await db.commit()
+        if bonus["granted"]:
+            logger.info("Signup bonus granted to user %s", user.email)
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to grant signup bonus to user %s", user.email)
 
     return {"message": "User verified successfully"}
 
@@ -142,7 +154,9 @@ async def forgot_password(
         )
         logger.info("Password reset requested for %s", data.email)
 
-    return {"message": "Если аккаунт с таким email существует, на него будет отправлена ссылка для сброса пароля."}
+    return {
+        "message": "Если аккаунт с таким email существует, на него будет отправлена ссылка для сброса пароля."
+    }
 
 
 @router.post("/reset-password")
@@ -158,10 +172,14 @@ async def reset_password(
         raise HTTPException(status_code=400, detail="Пользователь не найден")
 
     if user.hashed_password[:16] != hash_prefix:
-        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля уже была использована")
+        raise HTTPException(
+            status_code=400, detail="Ссылка для сброса пароля уже была использована"
+        )
 
     user.hashed_password = hash_password(data.new_password)
     await db.commit()
 
     logger.info("Password reset completed for %s", email)
-    return {"message": "Пароль успешно изменён. Теперь вы можете войти с новым паролем."}
+    return {
+        "message": "Пароль успешно изменён. Теперь вы можете войти с новым паролем."
+    }

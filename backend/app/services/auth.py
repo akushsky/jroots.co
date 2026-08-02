@@ -40,7 +40,9 @@ def authenticate(user: User | None, username: str, password: str) -> str:
         logger.error("User with email %s not found", username)
         raise HTTPException(status_code=400, detail="Неверный email или пароль")
 
-    expected_hash = _get_admin_hashed_password() if user.is_admin else user.hashed_password
+    expected_hash = (
+        _get_admin_hashed_password() if user.is_admin else user.hashed_password
+    )
     if not verify_password(password, expected_hash):
         logger.error("Invalid password for user with email %s", username)
         raise HTTPException(status_code=400, detail="Неверный email или пароль")
@@ -61,22 +63,25 @@ def create_access_token(user: User, expires_delta: timedelta | None = None) -> s
         "is_admin": user.is_admin,
         "is_verified": user.is_verified,
         "iat": datetime.now(timezone.utc),
-        "exp": datetime.now(timezone.utc) + (
-            expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
-        ),
+        "exp": datetime.now(timezone.utc)
+        + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes)),
     }
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
 def generate_verification_token(email: str) -> str:
     settings = get_settings()
-    return jwt.encode({"email": email}, settings.secret_key, algorithm=settings.algorithm)
+    return jwt.encode(
+        {"email": email}, settings.secret_key, algorithm=settings.algorithm
+    )
 
 
 def verify_token(token: str) -> str:
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.algorithm]
+        )
         email = payload.get("email")
         if email is None:
             raise HTTPException(status_code=400, detail="Invalid token")
@@ -94,7 +99,8 @@ def generate_reset_token(user: User) -> str:
         "email": user.email,
         "hash_prefix": user.hashed_password[:16],
         "purpose": "reset",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES),
+        "exp": datetime.now(timezone.utc)
+        + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
@@ -102,22 +108,33 @@ def generate_reset_token(user: User) -> str:
 def verify_reset_token(token: str) -> tuple[str, str]:
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.algorithm]
+        )
         email = payload.get("email")
         hash_prefix = payload.get("hash_prefix")
         if not email or not hash_prefix or payload.get("purpose") != "reset":
-            raise HTTPException(status_code=400, detail="Недействительная ссылка для сброса пароля")
+            raise HTTPException(
+                status_code=400, detail="Недействительная ссылка для сброса пароля"
+            )
         return email, hash_prefix
     except PyJWTError:
-        raise HTTPException(status_code=400, detail="Ссылка для сброса пароля истекла или недействительна")
+        raise HTTPException(
+            status_code=400,
+            detail="Ссылка для сброса пароля истекла или недействительна",
+        )
 
 
-async def resolve_user_from_token(token: Optional[str], db: AsyncSession) -> Optional[User]:
+async def resolve_user_from_token(
+    token: Optional[str], db: AsyncSession
+) -> Optional[User]:
     if not token:
         return None
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.algorithm]
+        )
         email: str = payload.get("sub")
         if email is None:
             return None
@@ -140,6 +157,21 @@ async def get_current_admin(
     if admin_user is None or not admin_user.is_admin:
         raise credentials_exception
     return admin_user
+
+
+async def get_current_user(
+    token: str = Depends(admin_oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    user = await resolve_user_from_token(token, db)
+    if user is None:
+        raise credentials_exception
+    return user
 
 
 async def get_current_user_optional(

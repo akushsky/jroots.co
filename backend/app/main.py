@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.database import engine
 from app.middleware.logging import LoggingMiddleware
 from app.rate_limit import limiter
-from app.routers import admin, auth, images, search, telegram
+from app.routers import admin, auth, credits, images, search, telegram
 from app.utils.logging_config import setup_logging
 
 settings = get_settings()
@@ -62,6 +62,7 @@ app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(images.router)
 app.include_router(telegram.router)
+app.include_router(credits.router)
 
 
 @app.get("/api/health")

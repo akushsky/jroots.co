@@ -15,3 +15,5 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)
     is_subscribed = Column(Boolean, default=False)
+
+    fingerprint_hash = Column(String(128), nullable=True)
