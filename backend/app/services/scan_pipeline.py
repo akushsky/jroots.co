@@ -91,24 +91,28 @@ def _sniff_format(data: bytes) -> str | None:
 
 
 def _normalize_sync(data: bytes) -> bytes:
-    """Decode (with a pixel cap against bombs), downscale, re-encode as JPEG."""
-    previous_limit = PILImage.MAX_IMAGE_PIXELS
-    PILImage.MAX_IMAGE_PIXELS = MAX_SCAN_PIXELS
-    try:
-        with PILImage.open(BytesIO(data)) as img:
-            img = ImageOps.exif_transpose(img)
-            img.load()
-            if max(img.size) > MAX_SCAN_DIMENSION:
-                resample = PILImage.Resampling.LANCZOS
-                img.thumbnail(
-                    (MAX_SCAN_DIMENSION, MAX_SCAN_DIMENSION), resample=resample
-                )
-            rgb = img.convert("RGB")
-            buffer = BytesIO()
-            rgb.save(buffer, format="JPEG", quality=JPEG_QUALITY)
-            return buffer.getvalue()
-    finally:
-        PILImage.MAX_IMAGE_PIXELS = previous_limit
+    """Decode (with a pixel cap against bombs), downscale, re-encode as JPEG.
+
+    The pixel cap is enforced EXPLICITLY right after open(): the size is
+    known from the header, so an oversized image is rejected before a single
+    pixel is decoded. PIL's own MAX_IMAGE_PIXELS is not relied upon — it
+    only warns at 1x and raises at 2x, letting a 64Mpx PNG decode ~200 MB.
+    """
+    with PILImage.open(BytesIO(data)) as img:
+        if img.width * img.height > MAX_SCAN_PIXELS:
+            raise UnsupportedMediaError(
+                f"image is {img.width}x{img.height} px "
+                f"({img.width * img.height} px > {MAX_SCAN_PIXELS} px limit)"
+            )
+        img = ImageOps.exif_transpose(img)
+        img.load()
+        if max(img.size) > MAX_SCAN_DIMENSION:
+            resample = PILImage.Resampling.LANCZOS
+            img.thumbnail((MAX_SCAN_DIMENSION, MAX_SCAN_DIMENSION), resample=resample)
+        rgb = img.convert("RGB")
+        buffer = BytesIO()
+        rgb.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+        return buffer.getvalue()
 
 
 def _scan_file_path(user_id: int, scan_id: int) -> str:
@@ -229,6 +233,8 @@ async def process_upload(
 
     try:
         jpeg_bytes = await asyncio.to_thread(_normalize_sync, data)
+    except UnsupportedMediaError:
+        raise
     except Exception as exc:
         raise UnsupportedMediaError(f"undecodable image: {exc}") from exc
 

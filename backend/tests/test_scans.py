@@ -77,6 +77,25 @@ def make_image_bytes(fmt="JPEG", width=300, height=200, color="blue"):
     return buf.getvalue()
 
 
+def make_png_header_only(width, height):
+    """A valid PNG signature + IHDR + IEND with NO pixel data. PIL's open()
+    reads the size lazily from the header, so a bomb-sized image can be fed
+    to the pipeline without allocating its decoded body in the test."""
+    import struct
+    import zlib
+
+    def chunk(tag, data):
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data))
+        )
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")
+
+
 async def create_user_with_scans(db, *, email, scans=2, paid=False):
     user = await create_user(db, email=email)
     db.add(Credit(user_id=user.id, searches_left=5, scans_left=scans))
@@ -157,6 +176,54 @@ async def test_upload_tiff_accepted_and_converted(client, db_session, fake_visio
     scan = await db_session.get(Scan, response.json()["scan_id"])
     with PILImage.open(scan.file_path) as stored:
         assert stored.format == "JPEG"
+
+
+# --- Decompression-bomb guard ---
+
+
+async def test_oversized_pixels_rejected_before_decode(client, db_session, fake_vision):
+    vision = fake_vision([GOOD_VISION_JSON])
+    user = await create_user_with_scans(db_session, email="scan-bomb@example.com")
+    session_id = await create_chat_session(client, user)
+
+    # 8000x8000 = 64Mpx > 50Mpx limit, but only ~100 bytes on the wire and
+    # ~192 MB when decoded. Must be rejected from the header, before any
+    # pixel decode and before vision.
+    bomb = make_png_header_only(8000, 8000)
+    assert len(bomb) < 1024
+    response = await upload_scan(client, user, session_id, bomb, filename="scan.png")
+
+    assert response.status_code == 415
+    assert vision.calls == []
+    count = (await db_session.execute(select(func.count(Scan.id)))).scalar_one()
+    assert count == 0
+
+
+async def test_oversized_pixels_direct_guard_message():
+    # The header-only PNG would explode inside load() if the guard did not
+    # fire first — getting UnsupportedMediaError with the pixel message
+    # proves the early exit happened before decoding.
+    bomb = make_png_header_only(8000, 8000)
+    with pytest.raises(scan_pipeline.UnsupportedMediaError, match="px > .*px limit"):
+        scan_pipeline._normalize_sync(bomb)
+
+
+async def test_large_but_valid_image_accepted(client, db_session, fake_vision):
+    fake_vision([GOOD_VISION_JSON])
+    user = await create_user_with_scans(db_session, email="scan-12mp@example.com")
+    session_id = await create_chat_session(client, user)
+
+    # 4000x3000 = 12Mpx — well under the pixel cap, over the display
+    # dimension cap: accepted and downscaled, not rejected.
+    response = await upload_scan(
+        client, user, session_id, make_image_bytes(width=4000, height=3000)
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "done"
+    scan = await db_session.get(Scan, response.json()["scan_id"])
+    with PILImage.open(scan.file_path) as stored:
+        assert max(stored.size) <= scan_pipeline.MAX_SCAN_DIMENSION
 
 
 # --- Successful cycle ---
