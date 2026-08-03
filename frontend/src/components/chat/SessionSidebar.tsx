@@ -21,11 +21,11 @@ function formatDate(iso: string): string {
 
 export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: SessionSidebarProps) {
     return (
-        <div className="flex flex-col h-full">
-            <div className="p-3 border-b border-border flex items-center gap-2">
-                <Button onClick={onNew} variant="outline" className="flex-1">
+        <div className="flex flex-col h-full min-w-0 overflow-hidden">
+            <div className="p-3 border-b border-border flex items-center gap-2 min-w-0">
+                <Button onClick={onNew} variant="outline" className="flex-1 min-w-0">
                     <MessageSquarePlus />
-                    Новый поиск
+                    <span className="truncate">Новый поиск</span>
                 </Button>
                 {onClose && (
                     <Button onClick={onClose} variant="ghost" size="icon" className="md:hidden" aria-label="Закрыть список">
@@ -33,7 +33,7 @@ export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: S
                     </Button>
                 )}
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1 min-w-0">
                 {sessions.length === 0 && (
                     <p className="text-xs text-muted-foreground px-2 py-4 text-center">
                         Здесь появятся ваши поиски
@@ -44,7 +44,7 @@ export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: S
                         key={session.id}
                         onClick={() => onSelect(session.id)}
                         className={cn(
-                            "w-full text-left rounded-md px-3 py-2 text-sm transition-colors",
+                            "block w-full min-w-0 overflow-hidden text-left rounded-md px-3 py-2 text-sm transition-colors",
                             session.id === activeId
                                 ? "bg-accent text-accent-foreground"
                                 : "hover:bg-muted",
@@ -55,7 +55,7 @@ export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: S
                         </span>
                         <span
                             className={cn(
-                                "block text-xs mt-0.5",
+                                "block truncate text-xs mt-0.5",
                                 session.id === activeId ? "text-accent-foreground/70" : "text-muted-foreground",
                             )}
                         >

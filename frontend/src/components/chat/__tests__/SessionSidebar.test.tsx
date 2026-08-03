@@ -90,4 +90,23 @@ describe("SessionSidebar", () => {
 
         expect(screen.getByText("Объектное превью")).toBeInTheDocument();
     });
+
+    it("renders a 100+ char title inside a truncating span, without widening the sidebar", () => {
+        const longTitle = "Рабиновичи-Зильберштейны из Бердичева, подробный поиск ".repeat(3);
+        const {container} = render(
+            <SessionSidebar
+                sessions={[{...base, id: "s10", title: longTitle}]}
+                activeId={null}
+                onSelect={vi.fn()}
+                onNew={vi.fn()}
+            />,
+        );
+
+        const titleEl = screen.getByText(longTitle.trim());
+        expect(titleEl).toHaveClass("truncate");
+        // the session button clips overflow instead of spilling past the column
+        expect(titleEl.closest("button")).toHaveClass("overflow-hidden");
+        // the scroll container never grows a horizontal scrollbar
+        expect(container.querySelector(".overflow-x-hidden")).not.toBeNull();
+    });
 });

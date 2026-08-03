@@ -8,6 +8,17 @@ describe("SSEParser", () => {
         expect(events).toEqual([{event: "token", data: '{"text":"привет"}'}]);
     });
 
+    it("parses step events interleaved with tokens", () => {
+        const parser = new SSEParser();
+        const events = parser.feed(
+            'event: step\ndata: {"text":"Ищу в архиве…"}\n\nevent: token\ndata: {"text":"Нашёл"}\n\n',
+        );
+        expect(events).toEqual([
+            {event: "step", data: '{"text":"Ищу в архиве…"}'},
+            {event: "token", data: '{"text":"Нашёл"}'},
+        ]);
+    });
+
     it("joins multiple data lines with a newline", () => {
         const parser = new SSEParser();
         const events = parser.feed("event: token\ndata: первая\ndata: вторая\n\n");

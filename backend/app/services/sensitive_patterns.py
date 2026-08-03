@@ -29,6 +29,23 @@ CIPHER_DETECT_RE = re.compile(r"(?:^|[\s(,.;])(?:ф|оп|д)\.\s*\d+", re.IGNORE
 # A whole URL token (URLs contain no whitespace).
 URL_FULL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 
+# Replacement for a redacted bare URL (markdown italic).
+URL_PLACEHOLDER = " 🔒 _доступно в полной версии_ "
+
+# A whole markdown link [label](https://...) — replaced by «label 🔒».
+# The label is capped at 100 chars: a longer label falls back to plain-URL
+# redaction inside the parentheses (the URL itself still cannot leak).
+MD_LINK_FULL_RE = re.compile(
+    r"\[([^\]]{0,100})\]\(https?://[^)\s]+\)",
+    re.IGNORECASE,
+)
+
+# Trailing partial markdown link, held back until it either completes (and
+# gets redacted) or turns out to be innocent text: an open bracket with the
+# label in progress, or a finished label with the destination still typing.
+MD_LINK_OPEN_TAIL_RE = re.compile(r"\[[^\]\n]{0,100}$")
+MD_LINK_DEST_TAIL_RE = re.compile(r"\[[^\]\n]{0,100}\]\(\S*$")
+
 # A cipher sequence: one or more «ф./оп./д./л. <num>» components with their
 # trailing separators, e.g. «ф. 585 оп. 1 д. 23» or «оп.1, д.5». «л.» (лист)
 # is included on top of the detector set — a sheet number without fond/opis

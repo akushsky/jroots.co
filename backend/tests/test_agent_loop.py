@@ -632,3 +632,66 @@ async def test_agent_cycle_without_tool_calls_is_free(
         )
     ).scalar_one()
     assert message.content == "Уточните год рождения деда."
+
+
+async def test_agent_intermediate_rounds_emit_step_events(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(
+        script=[
+            McpCallResult(text="Найдено 1 запись"),
+            McpCallResult(text="Найдено 1 запись"),
+        ]
+    )
+    fake_mcp(transport)
+    fake_llm(
+        [
+            [
+                _chunk("Сначала посмотрю базы."),
+                _chunk(tool_calls=[_tc(0, "c1", "search", '{"database": "gabo"}')]),
+                _chunk(usage=_usage(10, 5)),
+            ],
+            [
+                _chunk("Теперь ищу в ГАБО."),
+                _chunk(tool_calls=[_tc(0, "c2", "search", '{"database": "dako"}')]),
+                _chunk(usage=_usage(10, 5)),
+            ],
+            [
+                _chunk("Нашёл запись."),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-steps@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу захоронение деда")
+    events = [event for event, _ in frames]
+    # Reasoning of the tool-calling rounds is `step`; the final answer is `token`.
+    assert events == ["step", "step", "token", "token", "usage", "done"]
+    assert frames[0][1] == {"text": "Сначала посмотрю базы."}
+    assert frames[1][1] == {"text": "Теперь ищу в ГАБО."}
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+    assert streamed == "Нашёл запись."
+    assert frames[-1][1]["searches_left"] == 4
+
+    # One assistant message, steps marked up for history re-rendering.
+    message = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.session_id == session["id"],
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert message.content == (
+        "<steps>Сначала посмотрю базы.</steps>"
+        "<steps>Теперь ищу в ГАБО.</steps>"
+        "Нашёл запись."
+    )
+
+    rows = await _searches(db_session, session["id"])
+    assert len(rows) == 1
+    assert rows[0].charged is True
+    assert rows[0].results_count == 2

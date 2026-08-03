@@ -4,8 +4,13 @@ run_agent_cycle() drives the tool-calling loop for one user message and
 yields (event, data) pairs that the router serializes into SSE frames.
 Event contract (M1 events plus the paywall addition):
 
-  token   {"text": ...}        — answer deltas (cipher/URL-redacted for the
-                                 teaser tier; the model itself sees full data)
+  token   {"text": ...}        — final-answer deltas (cipher/URL-redacted
+                                 for the teaser tier; the model itself sees
+                                 full data)
+  step    {"text": ...}        — intermediate reasoning block of a round
+                                 that ended with tool calls (one event per
+                                 round; persisted wrapped in <steps>...</steps>
+                                 so the frontend can re-render the split)
   usage   {"model", "prompt_tokens", "completion_tokens",
            "session_tokens_total"}
   capped  {"reason": "token_cap"|"daily_budget"}
@@ -145,31 +150,48 @@ async def run_agent_cycle(
                         "generations": generations,
                     }
                 )
-                round_text: list[str] = []
+                round_raw: list[str] = []
+                round_visible: list[str] = []
                 tool_calls: list[dict[str, str]] = []
                 async for item in llm_router.stream_completion(
                     messages, model, tools=client.openai_tools
                 ):
                     if item["type"] == "token":
-                        round_text.append(item["text"])
+                        round_raw.append(item["text"])
                         out = (
                             redactor.feed(item["text"])
                             if redactor is not None
                             else item["text"]
                         )
-                        visible_parts.append(out)
-                        if out:
-                            yield "token", {"text": out}
+                        round_visible.append(out)
                     elif item["type"] == "tool_calls":
                         tool_calls = item["tool_calls"]
                     elif item["type"] == "usage":
                         usage["prompt_tokens"] += item["prompt_tokens"]
                         usage["completion_tokens"] += item["completion_tokens"]
+                if redactor is not None:
+                    # Patterns never span completion rounds — release the
+                    # held-back tail into THIS round's output.
+                    round_visible.append(redactor.flush())
 
+                # The event type is decided by how the round ended, so the
+                # round's text is buffered until its stream completes:
+                # - ended with tool calls → intermediate reasoning, one
+                #   `step` event, persisted wrapped in <steps>...</steps>;
+                # - no tool calls → the final answer, `token` events with
+                #   the original delta granularity.
                 if not tool_calls:
-                    break  # final answer fully streamed
+                    visible_parts.extend(round_visible)
+                    for out in round_visible:
+                        if out:
+                            yield "token", {"text": out}
+                    break
 
-                messages.append(_assistant_tool_message(round_text, tool_calls))
+                step_text = "".join(round_visible)
+                if step_text:
+                    yield "step", {"text": step_text}
+                    visible_parts.append(f"<steps>{step_text}</steps>")
+                messages.append(_assistant_tool_message(round_raw, tool_calls))
                 tool_messages = await _execute_tools(client, tool_calls)
                 messages.extend(tool_messages)
             else:
@@ -190,12 +212,6 @@ async def run_agent_cycle(
             return
     finally:
         await client.close()
-
-    if redactor is not None:
-        tail = redactor.flush()
-        visible_parts.append(tail)
-        if tail:
-            yield "token", {"text": tail}
 
     final_text = "".join(visible_parts)
     tool_calls_delta = client.calls_used - initial_tool_calls

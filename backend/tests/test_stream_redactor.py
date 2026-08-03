@@ -1,3 +1,4 @@
+from app.services.sensitive_patterns import URL_PLACEHOLDER
 from app.services.stream_redactor import StreamRedactor
 
 
@@ -23,25 +24,58 @@ def test_town_and_year_are_not_ciphers():
     assert _run([text]) == text
 
 
-def test_url_removed_single_delta():
+def test_url_replaced_with_placeholder():
     out = _run(["запись https://archive.example/record/1 найдена"])
-    assert "https" not in out
     assert "archive.example" not in out
+    assert URL_PLACEHOLDER in out
     assert "найдена" in out
 
 
 def test_url_split_across_deltas():
     out = _run(["ссылка: https://arc", "hive.exam", "ple/r/1 готово"])
-    assert "https" not in out
     assert "hive.example" not in out
     assert "ссылка: " in out
+    assert URL_PLACEHOLDER in out
     assert "готово" in out
 
 
-def test_www_url_removed_case_insensitive():
+def test_www_url_replaced_case_insensitive():
     out = _run(["см. WWW.ARCHIVE.RU/x далее"])
     assert "archive" not in out.lower()
+    assert URL_PLACEHOLDER in out
     assert "далее" in out
+
+
+def test_markdown_link_becomes_label_with_lock():
+    out = _run(["см. [Catalog URL](https://archive.example/r/1) далее"])
+    assert "archive.example" not in out
+    assert out == "см. Catalog URL 🔒 далее"
+
+
+def test_markdown_link_split_across_deltas():
+    deltas = ["см. [Cat", "alog](htt", "ps://arc", "hive.ru/x) готово"]
+    out = _run(deltas)
+    assert "hive.ru" not in out
+    assert out == "см. Catalog 🔒 готово"
+
+
+def test_multiple_markdown_links_in_a_row():
+    out = _run(["[A](https://a.ru/x) и [B](https://b.ru/y) конец"])
+    assert "a.ru" not in out
+    assert "b.ru" not in out
+    assert out == "A 🔒 и B 🔒 конец"
+
+
+def test_markdown_link_split_inside_url():
+    deltas = ["фото: [скан](https://toldot", ".ru/gr", "ave/7), запись"]
+    out = _run(deltas)
+    assert "toldot" not in out
+    assert out == "фото: скан 🔒, запись"
+
+
+def test_non_link_brackets_survive():
+    out = _run(["см. [1] и [два](не-ссылка) текст"])
+    assert out == "см. [1] и [два](не-ссылка) текст"
 
 
 def test_cipher_removed_single_delta():

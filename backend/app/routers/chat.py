@@ -1,7 +1,10 @@
 """Chat endpoints: sessions + message completions (SSE or JSON).
 
 SSE contract (consumed by the frontend):
-  event: token  / data: {"text": "..."}                              — deltas
+  event: token  / data: {"text": "..."}                              — final-answer deltas
+  event: step   / data: {"text": "..."}                              — intermediate
+                        reasoning block of a round that ended with tool
+                        calls (agent mode only, M2)
   event: usage  / data: {"model", "prompt_tokens", "completion_tokens",
                          "session_tokens_total"}
   event: capped / data: {"reason": "token_cap"|"daily_budget"}       — before

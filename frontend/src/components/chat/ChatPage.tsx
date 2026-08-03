@@ -15,6 +15,7 @@ import {SessionSidebar} from "./SessionSidebar";
 import {ChatMessageBubble} from "./ChatMessageBubble";
 import {ChatInput} from "./ChatInput";
 import {Paywall} from "./Paywall";
+import {extractSteps} from "./steps";
 import type {DisplayMessage} from "./types";
 
 const CONNECTION_LOST = "Соединение прервано, попробуйте ещё раз";
@@ -77,11 +78,13 @@ export default function ChatPage() {
         try {
             const session = await getSession(id);
             setMessages(
-                session.messages.map((m) => ({
-                    id: m.id,
-                    role: m.role,
-                    content: m.content,
-                })),
+                session.messages.map((m) => {
+                    if (m.role === "assistant") {
+                        const {steps, content} = extractSteps(m.content);
+                        return {id: m.id, role: m.role, content, steps: steps ?? undefined};
+                    }
+                    return {id: m.id, role: m.role, content: m.content};
+                }),
             );
         } catch {
             setMessages([
@@ -131,7 +134,7 @@ export default function ChatPage() {
             setMessages((prev) => [
                 ...prev,
                 {id: nextTempId(), role: "user", content},
-                {id: assistantId, role: "assistant", content: "", pending: true},
+                {id: assistantId, role: "assistant", content: "", pending: true, live: true},
             ]);
             setStreaming(true);
 
@@ -152,6 +155,15 @@ export default function ChatPage() {
                                 ),
                             );
                         },
+                        onStep: (text) => {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantId
+                                        ? {...m, steps: (m.steps ?? "") + text}
+                                        : m,
+                                ),
+                            );
+                        },
                         onUsage: (usage) => setSessionTokens(usage.session_tokens_total),
                         onCapped: (reason) => patchAssistant(assistantId, {capped: reason}),
                         onDone: (done) => {
@@ -162,6 +174,7 @@ export default function ChatPage() {
                                             ...m,
                                             id: done.message_id,
                                             pending: false,
+                                            live: false,
                                             capped: m.capped ?? (done.capped ? "token_cap" : null),
                                         }
                                         : m,
@@ -185,6 +198,7 @@ export default function ChatPage() {
                         onError: (message) => {
                             patchAssistant(assistantId, {
                                 pending: false,
+                                live: false,
                                 content: message || "Что-то пошло не так. Попробуйте ещё раз.",
                                 error: true,
                             });
@@ -193,11 +207,11 @@ export default function ChatPage() {
                     controller.signal,
                 );
                 if (!result.finished) {
-                    patchAssistant(assistantId, {pending: false, content: CONNECTION_LOST, error: true});
+                    patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
                 }
             } catch {
                 if (!controller.signal.aborted) {
-                    patchAssistant(assistantId, {pending: false, content: CONNECTION_LOST, error: true});
+                    patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
                 }
             } finally {
                 setStreaming(false);
@@ -210,10 +224,10 @@ export default function ChatPage() {
     const showPaywall = credits !== null && credits.searches_left === 0 && !streaming;
 
     return (
-        <div className="relative flex h-[calc(100vh-5rem)] gap-4">
+        <div className="relative flex h-[calc(100vh-5rem)] gap-4 px-4 md:px-6">
             <aside
                 className={cn(
-                    "w-72 shrink-0 bg-card rounded-lg border border-border overflow-hidden",
+                    "w-72 max-w-[85vw] shrink-0 bg-card rounded-lg border border-border overflow-hidden",
                     sidebarOpen
                         ? "absolute inset-y-0 left-0 z-20 flex md:static"
                         : "hidden md:flex",

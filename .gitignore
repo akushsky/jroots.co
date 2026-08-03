@@ -60,3 +60,4 @@ cli/dazho_opisi/
 cli/dazho_opisi_party/
 cli/dazho_opisi_soviet/
 cli/input/
+backend/ca_bundle.pem

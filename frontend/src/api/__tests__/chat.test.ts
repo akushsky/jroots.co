@@ -27,6 +27,7 @@ function mockFetchSSEResponse(chunks: string[]) {
 function makeCallbacks() {
     return {
         onToken: vi.fn(),
+        onStep: vi.fn(),
         onUsage: vi.fn(),
         onCapped: vi.fn(),
         onDone: vi.fn(),
@@ -86,6 +87,23 @@ describe("streamMessage", () => {
             message_id: "m9",
             capped: true,
         });
+    });
+
+    it("dispatches step events to onStep, separate from tokens", async () => {
+        const callbacks = makeCallbacks();
+        mockFetchSSEResponse([
+            'event: step\ndata: {"text":"Ищу в ревизских сказках…"}\n\n',
+            'event: token\ndata: {"text":"Ответ"}\n\n',
+            'event: step\ndata: {"text":"Проверяю метрики…"}\n\n',
+            'event: done\ndata: {"session_id":"s1","message_id":"m2","capped":false}\n\n',
+        ]);
+
+        const result = await streamMessage("s1", "x", callbacks);
+
+        expect(result.finished).toBe(true);
+        expect(callbacks.onStep).toHaveBeenNthCalledWith(1, "Ищу в ревизских сказках…");
+        expect(callbacks.onStep).toHaveBeenNthCalledWith(2, "Проверяю метрики…");
+        expect(callbacks.onToken).toHaveBeenCalledTimes(1);
     });
 
     it("marks stream finished on server error event and reports the message", async () => {

@@ -80,6 +80,58 @@ describe("ChatPage", () => {
         expect(screen.getByText(/Токенов в сессии: 30/)).toBeInTheDocument();
     });
 
+    it("accumulates step events into a live «Ход поиска» block, collapsed after done", async () => {
+        const user = userEvent.setup();
+        let finish: (() => void) | undefined;
+        vi.mocked(streamMessage).mockImplementation(
+            async (sessionId: string, _content: string, callbacks: StreamCallbacks) => {
+                callbacks.onStep?.("Смотрю ревизии…");
+                callbacks.onStep?.("Нашёл совпадение…");
+                callbacks.onToken?.("Готовый ответ.");
+                await new Promise<void>((resolve) => {
+                    finish = () => {
+                        callbacks.onDone?.({session_id: sessionId, message_id: "m9", capped: false});
+                        resolve();
+                    };
+                });
+                return {finished: true};
+            },
+        );
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        // while streaming: accordion is open and the steps are visible
+        expect(await screen.findByText("Смотрю ревизии…Нашёл совпадение…")).toBeInTheDocument();
+
+        finish?.();
+        // after done: accordion collapses, the answer stays
+        await waitFor(() =>
+            expect(screen.queryByText("Смотрю ревизии…Нашёл совпадение…")).not.toBeInTheDocument(),
+        );
+        expect(screen.getByText("Ход поиска")).toBeInTheDocument();
+        expect(screen.getByText("Готовый ответ.")).toBeInTheDocument();
+    });
+
+    it("parses <steps> blocks from persisted history into the accordion", async () => {
+        vi.mocked(getSession).mockResolvedValue({
+            ...sessionSummary,
+            messages: [
+                {id: "m1", role: "user", content: "Вопрос"},
+                {id: "m2", role: "assistant", content: "<steps>Искал в архиве</steps>Чистый ответ."},
+            ],
+        });
+
+        renderChat();
+
+        expect(await screen.findByText("Чистый ответ.")).toBeInTheDocument();
+        expect(screen.getByText("Ход поиска")).toBeInTheDocument();
+        // collapsed by default for historical messages
+        expect(screen.queryByText("Искал в архиве")).not.toBeInTheDocument();
+    });
+
     it("creates a session on first send when none is active", async () => {
         const user = userEvent.setup();
         vi.mocked(listSessions).mockResolvedValue([]);

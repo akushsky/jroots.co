@@ -43,6 +43,8 @@ export interface DoneEvent {
 
 export interface StreamCallbacks {
     onToken?: (text: string) => void;
+    /** Intermediate agent reasoning between tool calls ("Ход поиска"). */
+    onStep?: (text: string) => void;
     onUsage?: (usage: UsageEvent) => void;
     onCapped?: (reason: CappedReason) => void;
     onDone?: (done: DoneEvent) => void;
@@ -111,6 +113,9 @@ export async function streamMessage(
         switch (event) {
             case "token":
                 callbacks.onToken?.((payload as { text: string }).text);
+                break;
+            case "step":
+                callbacks.onStep?.((payload as { text: string }).text);
                 break;
             case "usage":
                 callbacks.onUsage?.(payload as UsageEvent);
