@@ -12,7 +12,7 @@ describe("ChatMessageBubble steps accordion", () => {
     it("renders «Ход поиска» collapsed by default after the stream finished", () => {
         render(
             <ChatMessageBubble
-                message={assistantMessage({steps: "Искал в метриках", live: false})}
+                message={assistantMessage({steps: ["Искал в метриках"], live: false})}
             />,
         );
 
@@ -26,7 +26,7 @@ describe("ChatMessageBubble steps accordion", () => {
     it("stays open and live while streaming", () => {
         render(
             <ChatMessageBubble
-                message={assistantMessage({steps: "Промежуточный шаг", live: true})}
+                message={assistantMessage({steps: ["Промежуточный шаг"], live: true})}
             />,
         );
 
@@ -37,7 +37,7 @@ describe("ChatMessageBubble steps accordion", () => {
         const user = userEvent.setup();
         render(
             <ChatMessageBubble
-                message={assistantMessage({steps: "Скрытый шаг", live: false})}
+                message={assistantMessage({steps: ["Скрытый шаг"], live: false})}
             />,
         );
 
@@ -45,8 +45,31 @@ describe("ChatMessageBubble steps accordion", () => {
         expect(await screen.findByText("Скрытый шаг")).toBeInTheDocument();
     });
 
+    it("renders each step as a separate list item, never glued together", () => {
+        const {container} = render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    steps: ["…для Самары (Куйбышеве", "Спасибо! У меня есть базы", "База pomnim.online"],
+                    live: true,
+                })}
+            />,
+        );
+
+        const items = container.querySelectorAll('[data-testid="steps-block"] li');
+        expect(items).toHaveLength(3);
+        // texts live in separate nodes — no «КуйбышевеСпасибо» glue
+        expect(items[0]).toHaveTextContent("1.…для Самары (Куйбышеве");
+        expect(items[1]).toHaveTextContent("2.Спасибо! У меня есть базы");
+        expect(items[2]).toHaveTextContent("3.База pomnim.online");
+    });
+
     it("renders no accordion when there are no steps", () => {
         render(<ChatMessageBubble message={assistantMessage({})} />);
+        expect(screen.queryByText("Ход поиска")).not.toBeInTheDocument();
+    });
+
+    it("renders no accordion when steps are all blank", () => {
+        render(<ChatMessageBubble message={assistantMessage({steps: ["  ", ""]})} />);
         expect(screen.queryByText("Ход поиска")).not.toBeInTheDocument();
     });
 });

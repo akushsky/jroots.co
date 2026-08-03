@@ -4,7 +4,7 @@ import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/
 import {cn} from "@/lib/utils";
 
 interface StepsBlockProps {
-    steps: string;
+    steps: string[];
     /** True while the owning message is still streaming — accordion stays open and live. */
     live?: boolean;
 }
@@ -16,6 +16,10 @@ export function StepsBlock({steps, live = false}: StepsBlockProps) {
     useEffect(() => {
         setOpen(live);
     }, [live]);
+
+    const items = steps.map((step) => step.trim()).filter(Boolean);
+
+    if (items.length === 0) return null;
 
     return (
         <Collapsible open={open} onOpenChange={setOpen} data-testid="steps-block">
@@ -37,9 +41,16 @@ export function StepsBlock({steps, live = false}: StepsBlockProps) {
                 )}
             </CollapsibleTrigger>
             <CollapsibleContent>
-                <div className="mt-1 mb-1 rounded-md bg-muted/50 border border-border/60 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">
-                    {steps}
-                </div>
+                <ol className="mt-1 mb-1 rounded-md bg-muted/50 border border-border/60 px-3 py-2 space-y-1.5 text-xs text-muted-foreground max-h-64 overflow-y-auto list-none">
+                    {items.map((step, index) => (
+                        <li key={index} className="flex gap-2">
+                            <span className="shrink-0 text-muted-foreground/60 tabular-nums">
+                                {index + 1}.
+                            </span>
+                            <span className="whitespace-pre-wrap">{step}</span>
+                        </li>
+                    ))}
+                </ol>
             </CollapsibleContent>
         </Collapsible>
     );

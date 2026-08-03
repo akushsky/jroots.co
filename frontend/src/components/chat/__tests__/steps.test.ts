@@ -4,21 +4,21 @@ import {extractSteps} from "../steps";
 describe("extractSteps", () => {
     it("extracts a single steps block from the answer", () => {
         const result = extractSteps("<steps>Искал в ревизиях</steps>Вот что нашёл.");
-        expect(result.steps).toBe("Искал в ревизиях");
+        expect(result.steps).toEqual(["Искал в ревизиях"]);
         expect(result.content).toBe("Вот что нашёл.");
     });
 
-    it("joins multiple steps blocks and cleans the answer", () => {
+    it("keeps multiple steps blocks as separate entries and cleans the answer", () => {
         const result = extractSteps(
             "<steps>Шаг один</steps>Начало ответа. <steps>Шаг два</steps> Конец ответа.",
         );
-        expect(result.steps).toBe("Шаг один\n\nШаг два");
+        expect(result.steps).toEqual(["Шаг один", "Шаг два"]);
         expect(result.content).toBe("Начало ответа.  Конец ответа.");
     });
 
-    it("handles multiline steps content", () => {
+    it("handles multiline steps content as one entry", () => {
         const result = extractSteps("<steps>\nСтрока 1\nСтрока 2\n</steps>Ответ");
-        expect(result.steps).toBe("Строка 1\nСтрока 2");
+        expect(result.steps).toEqual(["Строка 1\nСтрока 2"]);
         expect(result.content).toBe("Ответ");
     });
 

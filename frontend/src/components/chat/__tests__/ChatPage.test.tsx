@@ -80,7 +80,7 @@ describe("ChatPage", () => {
         expect(screen.getByText(/Токенов в сессии: 30/)).toBeInTheDocument();
     });
 
-    it("accumulates step events into a live «Ход поиска» block, collapsed after done", async () => {
+    it("accumulates step events as separate list items, collapsed after done", async () => {
         const user = userEvent.setup();
         let finish: (() => void) | undefined;
         vi.mocked(streamMessage).mockImplementation(
@@ -98,18 +98,24 @@ describe("ChatPage", () => {
             },
         );
 
-        renderChat();
+        const {container} = renderChat();
 
         const input = await screen.findByLabelText("Сообщение ассистенту");
         await user.type(input, "Привет{Enter}");
 
-        // while streaming: accordion is open and the steps are visible
-        expect(await screen.findByText("Смотрю ревизии…Нашёл совпадение…")).toBeInTheDocument();
+        // while streaming: accordion is open, each step is its own list item
+        await screen.findByText("Смотрю ревизии…");
+        const items = container.querySelectorAll('[data-testid="steps-block"] li');
+        expect(items).toHaveLength(2);
+        expect(items[0]).toHaveTextContent("Смотрю ревизии…");
+        expect(items[1]).toHaveTextContent("Нашёл совпадение…");
+        // no glued text anywhere
+        expect(screen.queryByText("Смотрю ревизии…Нашёл совпадение…")).not.toBeInTheDocument();
 
         finish?.();
         // after done: accordion collapses, the answer stays
         await waitFor(() =>
-            expect(screen.queryByText("Смотрю ревизии…Нашёл совпадение…")).not.toBeInTheDocument(),
+            expect(screen.queryByText("Смотрю ревизии…")).not.toBeInTheDocument(),
         );
         expect(screen.getByText("Ход поиска")).toBeInTheDocument();
         expect(screen.getByText("Готовый ответ.")).toBeInTheDocument();

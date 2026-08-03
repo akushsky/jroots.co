@@ -159,7 +159,7 @@ export default function ChatPage() {
                             setMessages((prev) =>
                                 prev.map((m) =>
                                     m.id === assistantId
-                                        ? {...m, steps: (m.steps ?? "") + text}
+                                        ? {...m, steps: [...(m.steps ?? []), text]}
                                         : m,
                                 ),
                             );

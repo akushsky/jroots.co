@@ -6,8 +6,8 @@ export interface DisplayMessage {
     content: string;
     /** Streaming has started but no tokens arrived yet — show "печатает…". */
     pending?: boolean;
-    /** Intermediate agent reasoning ("Ход поиска"), accumulated from step events. */
-    steps?: string;
+    /** Intermediate agent reasoning ("Ход поиска") — one entry per step event, rendered as a list. */
+    steps?: string[];
     /** True while this message is the actively streaming one — steps accordion stays open. */
     live?: boolean;
     capped?: CappedReason | null;

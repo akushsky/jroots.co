@@ -1,8 +1,8 @@
 const STEPS_PATTERN = /<steps>([\s\S]*?)<\/steps>/g;
 
 export interface ExtractedSteps {
-    /** Joined step text, or null when the content had no <steps> blocks. */
-    steps: string | null;
+    /** One entry per <steps> block, or null when the content had none. */
+    steps: string[] | null;
     /** Answer content with all <steps> blocks removed. */
     content: string;
 }
@@ -20,5 +20,5 @@ export function extractSteps(content: string): ExtractedSteps {
             return "";
         })
         .trim();
-    return {steps: parts.length > 0 ? parts.join("\n\n") : null, content: cleaned};
+    return {steps: parts.length > 0 ? parts : null, content: cleaned};
 }
