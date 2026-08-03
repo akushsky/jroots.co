@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     free_daily_budget_usd: float = 20.0
     free_sessions_per_day: int = 2
 
+    # JRoots MCP archive-search gateway (streamable HTTP).
+    jroots_mcp_enabled: bool = True
+    jroots_mcp_url: str = "http://localhost:8100"
+    jroots_mcp_token: str = ""
+    jroots_mcp_timeout_seconds: float = 30.0
+    mcp_tool_call_cap: int = 15
+    mcp_rate_limit_per_db_seconds: float = 1.0
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

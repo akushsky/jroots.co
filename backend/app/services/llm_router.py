@@ -83,13 +83,19 @@ def _estimate_tokens(text: str) -> int:
 
 
 async def stream_completion(
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     model: str,
     *,
     max_tokens: int | None = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Yield {"type": "token", "text": ...} deltas, then a final
     {"type": "usage", "prompt_tokens": N, "completion_tokens": M} item.
+
+    When `tools` is provided (function-calling schemas), tool-call deltas are
+    accumulated across chunks and emitted before usage as
+    {"type": "tool_calls", "tool_calls": [{"id", "name", "arguments"}]}
+    (arguments is the raw JSON string, as streamed by the provider).
 
     Usage comes from the provider's stream usage chunk (include_usage); if the
     provider omits it, both counters fall back to a chars/4 estimate.
@@ -103,10 +109,13 @@ async def stream_completion(
     }
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    if tools is not None:
+        kwargs["tools"] = tools
 
     stream = await client.chat.completions.create(**kwargs)
 
     collected: list[str] = []
+    tool_call_slots: dict[int, dict[str, str]] = {}
     usage: Any = None
     async for chunk in stream:
         if getattr(chunk, "usage", None):
@@ -114,10 +123,29 @@ async def stream_completion(
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
-        text = getattr(choices[0].delta, "content", None)
+        delta = choices[0].delta
+        text = getattr(delta, "content", None)
         if text:
             collected.append(text)
             yield {"type": "token", "text": text}
+        for call in getattr(delta, "tool_calls", None) or []:
+            slot = tool_call_slots.setdefault(
+                call.index, {"id": "", "name": "", "arguments": ""}
+            )
+            if getattr(call, "id", None):
+                slot["id"] += call.id
+            function = getattr(call, "function", None)
+            if function is not None:
+                if getattr(function, "name", None):
+                    slot["name"] += function.name
+                if getattr(function, "arguments", None):
+                    slot["arguments"] += function.arguments
+
+    if tool_call_slots:
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [tool_call_slots[index] for index in sorted(tool_call_slots)],
+        }
 
     if usage is not None:
         prompt_tokens = int(usage.prompt_tokens or 0)

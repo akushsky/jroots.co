@@ -8,8 +8,9 @@ masking), plus a defense-in-depth value scan that drops URL-looking strings
 and masks cipher-looking strings wherever they hide.
 """
 
-import re
 from typing import Any, Literal
+
+from app.services.sensitive_patterns import CIPHER_DETECT_RE, URL_DETECT_RE
 
 # Top-level fields allowed into a teaser (safe-by-default whitelist).
 KEEP_FIELDS = frozenset(
@@ -90,9 +91,9 @@ MASK_SUFFIX = "…"
 # leak the whole name.
 _MIN_UNMASKED_LEN = 5
 
-# Defense-in-depth value detection.
-_URL_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
-_CIPHER_RE = re.compile(r"(?:^|[\s(,.;])(?:ф|оп|д)\.\s*\d+", re.IGNORECASE)
+# Defense-in-depth value detection (shared with the stream redactor).
+_URL_RE = URL_DETECT_RE
+_CIPHER_RE = CIPHER_DETECT_RE
 
 
 def _is_url_like(value: str) -> bool:

@@ -6,14 +6,23 @@ SSE contract (consumed by the frontend):
                          "session_tokens_total"}
   event: capped / data: {"reason": "token_cap"|"daily_budget"}       — before
                         the graceful-stop message (delivered as token)
-  event: done   / data: {"session_id", "message_id", "capped"}
+  event: paywall / data: {"searches_left": 0}                        — search
+                        credits exhausted; the assistant notice follows as a
+                        token event (agent mode only, M2)
+  event: done   / data: {"session_id", "message_id", "capped",
+                         "searches_left"}
   event: error  / data: {"message": "..."}                           — terminal
+
+With JROOTS_MCP_ENABLED=true (default) messages run the agent cycle
+(LLM + MCP archive tools); with false the legacy M1 direct-completion path
+is used as a kill-switch fallback.
 """
 
 import json
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -24,7 +33,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models import ChatMessage, ChatSession, User
+from app.services import credits as credits_service
 from app.services import llm_router
+from app.services.agent_loop import run_agent_cycle
 from app.services.auth import get_current_user
 from app.services.prompts import SYSTEM_PROMPT
 
@@ -52,6 +63,10 @@ class MessageIn(BaseModel):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _searches_left(db: AsyncSession, user_id: int) -> int:
+    return (await credits_service.get_balance(db, user_id))["searches_left"]
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -289,7 +304,12 @@ async def _stream_reply(
         )
         yield _sse(
             "done",
-            {"session_id": session.id, "message_id": message.id, "capped": True},
+            {
+                "session_id": session.id,
+                "message_id": message.id,
+                "capped": True,
+                "searches_left": await _searches_left(db, session.user_id),
+            },
         )
         return
 
@@ -329,8 +349,65 @@ async def _stream_reply(
     )
     yield _sse(
         "done",
-        {"session_id": session.id, "message_id": message.id, "capped": False},
+        {
+            "session_id": session.id,
+            "message_id": message.id,
+            "capped": False,
+            "searches_left": await _searches_left(db, session.user_id),
+        },
     )
+
+
+async def _event_stream(
+    events: AsyncGenerator[tuple[str, dict[str, Any]], None],
+) -> AsyncGenerator[str, None]:
+    """Serialize agent-cycle (event, data) pairs into SSE frames."""
+    async for event, data in events:
+        yield _sse(event, data)
+
+
+async def _agent_json_reply(
+    db: AsyncSession, session: ChatSession, content: str
+) -> dict:
+    """JSON mode (tests/CLI): drain the agent cycle into one payload."""
+    tokens: list[str] = []
+    usage: dict | None = None
+    done: dict | None = None
+    error_message: str | None = None
+    capped = False
+    paywall = False
+    async for event, data in run_agent_cycle(db, session, content):
+        if event == "token":
+            tokens.append(data["text"])
+        elif event == "usage":
+            usage = data
+        elif event == "done":
+            done = data
+        elif event == "capped":
+            capped = True
+        elif event == "paywall":
+            paywall = True
+        elif event == "error":
+            error_message = data["message"]
+
+    if error_message is not None:
+        raise HTTPException(status_code=502, detail=error_message)
+    assert done is not None  # the cycle always terminates with done or error
+
+    result = await db.execute(
+        select(ChatMessage).where(ChatMessage.id == done["message_id"])
+    )
+    message = result.scalar_one()
+    payload: dict[str, Any] = {
+        "session_id": session.id,
+        "message": _message_dict(message),
+        "usage": usage,
+        "capped": capped,
+        "searches_left": done["searches_left"],
+    }
+    if paywall:
+        payload["paywall"] = True
+    return payload
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -343,6 +420,16 @@ async def post_message(
 ):
     session = await _get_owned_session(db, session_id, current_user.id)
     wants_sse = "text/event-stream" in request.headers.get("accept", "")
+
+    # Agent mode (M2): the cycle owns user-message persistence, budget/token
+    # caps, paywall, charging and the tool-calling loop.
+    if get_settings().jroots_mcp_enabled:
+        if wants_sse:
+            return StreamingResponse(
+                _event_stream(run_agent_cycle(db, session, body.content)),
+                media_type="text/event-stream",
+            )
+        return await _agent_json_reply(db, session, body.content)
 
     # Persist the user message first so it survives a failed/capped reply.
     db.add(ChatMessage(session_id=session.id, role=_ROLE_USER, content=body.content))
@@ -363,7 +450,12 @@ async def post_message(
             )
             yield _sse(
                 "done",
-                {"session_id": session.id, "message_id": message.id, "capped": True},
+                {
+                    "session_id": session.id,
+                    "message_id": message.id,
+                    "capped": True,
+                    "searches_left": await _searches_left(db, session.user_id),
+                },
             )
 
         return StreamingResponse(budget_stream(), media_type="text/event-stream")
