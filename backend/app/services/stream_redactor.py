@@ -22,19 +22,24 @@ each completion round.
 from app.services.sensitive_patterns import (
     CIPHER_SEQ_RE,
     CIPHER_TAIL_RE,
+    IMAGE_PLACEHOLDER,
+    MD_IMAGE_FULL_RE,
     MD_LINK_DEST_TAIL_RE,
     MD_LINK_FULL_RE,
     MD_LINK_OPEN_TAIL_RE,
     PARTIAL_TOKEN_TAIL_RE,
+    TRAILING_BANG_RE,
     URL_FULL_RE,
     URL_PLACEHOLDER,
 )
 
 
 def _redact(text: str) -> str:
-    """Rewrite complete markdown links, URLs and cipher sequences in a final
-    text span. Order matters: the markdown-link pattern consumes its URL, so
-    it must run before the bare-URL one."""
+    """Rewrite complete markdown images/links, bare URLs and cipher sequences
+    in a final text span. Order matters: the image construct contains a
+    link-shaped tail, and the link pattern consumes its URL — so images
+    first, links second, bare URLs last."""
+    text = MD_IMAGE_FULL_RE.sub(IMAGE_PLACEHOLDER, text)
     text = MD_LINK_FULL_RE.sub(lambda m: f"{m.group(1)} 🔒", text)
     text = URL_FULL_RE.sub(URL_PLACEHOLDER, text)
     return CIPHER_SEQ_RE.sub("", text)
@@ -72,6 +77,7 @@ class StreamRedactor:
             CIPHER_TAIL_RE,
             MD_LINK_OPEN_TAIL_RE,
             MD_LINK_DEST_TAIL_RE,
+            TRAILING_BANG_RE,
         ):
             match = pattern.search(self._buf)
             if match:

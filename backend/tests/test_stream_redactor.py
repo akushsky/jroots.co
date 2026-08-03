@@ -1,4 +1,4 @@
-from app.services.sensitive_patterns import URL_PLACEHOLDER
+from app.services.sensitive_patterns import IMAGE_PLACEHOLDER, URL_PLACEHOLDER
 from app.services.stream_redactor import StreamRedactor
 
 
@@ -76,6 +76,40 @@ def test_markdown_link_split_inside_url():
 def test_non_link_brackets_survive():
     out = _run(["см. [1] и [два](не-ссылка) текст"])
     assert out == "см. [1] и [два](не-ссылка) текст"
+
+
+def test_markdown_image_replaced_with_picture_placeholder():
+    out = _run(["фото: ![могила деда](https://toldot.ru/x.jpg) запись"])
+    assert "toldot" not in out
+    assert "могила деда" not in out  # the alt text is cut with the construct
+    assert out == f"фото: {IMAGE_PLACEHOLDER} запись"
+
+
+def test_markdown_image_split_across_deltas():
+    deltas = ["фото: ![мо", "гила](https://tol", "dot.ru/x.jp", "g) конец"]
+    out = _run(deltas)
+    assert "toldot" not in out
+    assert "гила" not in out
+    assert out == f"фото: {IMAGE_PLACEHOLDER} конец"
+
+
+def test_markdown_image_bang_split_from_bracket():
+    deltas = ["смотри !", "[скан](https://t.ru/1) далее"]
+    out = _run(deltas)
+    assert "t.ru" not in out
+    assert out == f"смотри {IMAGE_PLACEHOLDER} далее"
+
+
+def test_exclamation_in_prose_survives():
+    out = _run(["Нашлось! И это не все: вторая запись!"])
+    assert out == "Нашлось! И это не все: вторая запись!"
+
+
+def test_image_and_link_side_by_side():
+    out = _run(["![фото](https://img.ru/1) и [текст](https://a.ru/2) конец"])
+    assert "img.ru" not in out
+    assert "a.ru" not in out
+    assert out == f"{IMAGE_PLACEHOLDER} и текст 🔒 конец"
 
 
 def test_cipher_removed_single_delta():

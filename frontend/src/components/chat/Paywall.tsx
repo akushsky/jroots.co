@@ -43,13 +43,21 @@ function DisabledAction({label, small}: { label: string; small?: boolean }) {
     );
 }
 
-export function Paywall() {
+interface PaywallProps {
+    title?: string;
+    description?: string;
+}
+
+export function Paywall({
+    title = "Бесплатные поиски закончились",
+    description = "Выберите тариф, чтобы продолжить исследование семейной истории.",
+}: PaywallProps) {
     return (
         <div className="space-y-4" data-testid="paywall">
             <div className="text-center">
-                <h3 className="font-display text-xl font-semibold">Бесплатные поиски закончились</h3>
+                <h3 className="font-display text-xl font-semibold">{title}</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                    Выберите тариф, чтобы продолжить исследование семейной истории.
+                    {description}
                 </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">

@@ -420,7 +420,8 @@ async def test_agent_full_tier_stream_is_not_redacted(
             _tool_round("call_1", "search", ['{"database": "gabo"}']),
             [
                 _chunk("Запись ф. 585 оп. 1 д. 23, "),
-                _chunk("https://archive.ru/r/1"),
+                _chunk("https://archive.ru/r/1 "),
+                _chunk("![скан записи](https://archive.ru/img/1.jpg)"),
                 _chunk(usage=_usage(50, 25)),
             ],
         ]
@@ -443,6 +444,46 @@ async def test_agent_full_tier_stream_is_not_redacted(
     streamed = "".join(data["text"] for event, data in frames if event == "token")
     assert "ф. 585 оп. 1 д. 23" in streamed
     assert "https://archive.ru/r/1" in streamed
+    # Paid tier: inline images from tool results stay inline.
+    assert "![скан записи](https://archive.ru/img/1.jpg)" in streamed
+
+
+async def test_agent_teaser_redacts_inline_images(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("call_1", "search", ['{"database": "gabo"}']),
+            [
+                _chunk("Фото могилы: ![скан](https://tol"),
+                _chunk("dot.ru/x.jpg)"),
+                _chunk(usage=_usage(50, 25)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-teaser-img@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+    assert "toldot" not in streamed
+    assert "скан" not in streamed  # the alt text is cut with the construct
+    assert "🖼 🔒" in streamed
+    assert "Фото могилы: " in streamed
+
+    message = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.session_id == session["id"],
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert "toldot" not in message.content
+    assert "🖼 🔒" in message.content
 
 
 async def test_agent_empty_searches_escalate_model(
@@ -695,3 +736,44 @@ async def test_agent_intermediate_rounds_emit_step_events(
     assert len(rows) == 1
     assert rows[0].charged is True
     assert rows[0].results_count == 2
+
+
+async def test_agent_cap_instruction_never_leaks_to_user(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport, max_calls=1)
+    llm_client = fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            _tool_round("c2", "search", ['{"database": "dako"}']),
+            [
+                _chunk("По вашей семье нашлась метрическая запись из Клинцов, "),
+                _chunk("фамилия записана как Фалькович."),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-capleak@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    # Everything the user saw — neither the cap wording nor any mention of
+    # technical limits may leak into the visible stream.
+    visible = "".join(
+        data["text"] for event, data in frames if event in ("token", "step")
+    ).lower()
+    for leak in ("лимит", "кап", "ограничен", "бюджет", "вызов"):
+        assert leak not in visible
+
+    # The model, however, received the instruction to summarize naturally.
+    final_round = llm_client.chat.completions.calls[2]
+    tool_messages = [m for m in final_round["messages"] if m["role"] == "tool"]
+    instruction = tool_messages[-1]["content"]
+    assert instruction == TOOL_CALL_LIMIT_MESSAGE
+    assert "НЕ упоминая лимиты" in instruction
+    assert "естественное завершение" in instruction
+
+    assert frames[-1][0] == "done"
+    assert frames[-1][1]["searches_left"] == 4

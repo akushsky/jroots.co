@@ -1,29 +1,99 @@
+import {Children, useState, type ReactNode} from "react";
 import ReactMarkdown, {type Components} from "react-markdown";
 import {AlertTriangle} from "lucide-react";
 import {cn} from "@/lib/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import type {DisplayMessage} from "./types";
 import {StepsBlock} from "./StepsBlock";
+import {useOpenPaywall} from "./PaywallContext";
 
 const LOCK_TEASER = /доступно в полной версии/i;
+const IMAGE_LOCK_PRESENT = /🖼\s*🔒/;
+const IMAGE_LOCK_EXACT = /^🖼\s*🔒$/;
+const IMAGE_LOCK_SEGMENT = /(🖼\s*🔒)/g;
+const LOCK_TOOLTIP = "Полная запись со ссылкой на источник — пакет «Дело» $25";
 
-function LockChip({label}: { label: string }) {
+function LockChip({image = false}: { image?: boolean }) {
+    const openPaywall = useOpenPaywall();
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 text-xs bg-muted text-muted-foreground rounded-full px-2 py-0.5 cursor-help align-baseline">
-                    🔒 {label}
-                </span>
+                <button
+                    type="button"
+                    onClick={openPaywall}
+                    className="inline-flex items-center gap-1 text-xs bg-muted hover:bg-accent/20 border border-border rounded-full px-2 py-0.5 cursor-pointer align-baseline transition-colors"
+                >
+                    {image ? "🖼 🔒 в полной версии" : "🔒 в полной версии"}
+                </button>
             </TooltipTrigger>
-            <TooltipContent>Доступно в пакете «Дело»</TooltipContent>
+            <TooltipContent>{LOCK_TOOLTIP}</TooltipContent>
         </Tooltip>
     );
 }
 
+/** Replace backend's teaser placeholder «🖼 🔒» in plain text with a clickable chip. */
+function withImageLockChips(children: ReactNode): ReactNode {
+    return Children.map(children, (child) => {
+        if (typeof child !== "string" || !IMAGE_LOCK_PRESENT.test(child)) return child;
+        return child
+            .split(IMAGE_LOCK_SEGMENT)
+            .map((part, index) =>
+                IMAGE_LOCK_EXACT.test(part) ? <LockChip key={index} image /> : part,
+            );
+    });
+}
+
+function MarkdownImage({src, alt}: { src?: string; alt?: string }) {
+    const [failed, setFailed] = useState(false);
+    const [open, setOpen] = useState(false);
+
+    if (!src || failed) {
+        return (
+            <span className="block my-2 rounded-md border border-dashed border-border bg-muted/50 px-3 py-4 text-xs text-muted-foreground text-center">
+                Изображение недоступно{alt ? `: ${alt}` : ""}
+            </span>
+        );
+    }
+
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="block my-2 cursor-zoom-in"
+                aria-label={alt ? `Открыть изображение: ${alt}` : "Открыть изображение"}
+            >
+                <img
+                    src={src}
+                    alt={alt ?? ""}
+                    loading="lazy"
+                    onError={() => setFailed(true)}
+                    className="max-h-[200px] rounded-lg border border-border object-cover shadow-xs"
+                />
+            </button>
+            {open && (
+                <div
+                    role="dialog"
+                    aria-label={alt || "Просмотр изображения"}
+                    className="fixed inset-0 z-50 bg-foreground/70 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+                    onClick={() => setOpen(false)}
+                >
+                    <img
+                        src={src}
+                        alt={alt ?? ""}
+                        className="max-w-full max-h-full rounded-lg border border-border object-contain"
+                    />
+                </div>
+            )}
+        </>
+    );
+}
+
 const markdownComponents: Components = {
-    p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+    p: ({children}) => <p className="mb-2 last:mb-0">{withImageLockChips(children)}</p>,
     ul: ({children}) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
     ol: ({children}) => <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>,
+    li: ({children}) => <li>{withImageLockChips(children)}</li>,
     h3: ({children}) => <h3 className="font-display text-lg font-semibold mt-3 mb-1">{children}</h3>,
     a: ({href, children}) => (
         <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline">
@@ -33,10 +103,11 @@ const markdownComponents: Components = {
     strong: ({children}) => <strong className="font-semibold">{children}</strong>,
     em: ({children}) =>
         typeof children === "string" && LOCK_TEASER.test(children) ? (
-            <LockChip label={children} />
+            <LockChip />
         ) : (
             <em className="italic text-muted-foreground">{children}</em>
         ),
+    img: ({src, alt}) => <MarkdownImage src={src} alt={alt} />,
     code: ({children}) => (
         <code className="bg-muted px-1 py-0.5 rounded text-[0.85em]">{children}</code>
     ),

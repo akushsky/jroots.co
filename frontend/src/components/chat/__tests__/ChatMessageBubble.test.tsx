@@ -1,7 +1,8 @@
-import {describe, expect, it} from "vitest";
-import {render, screen} from "@testing-library/react";
+import {describe, expect, it, vi} from "vitest";
+import {fireEvent, render, screen} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {ChatMessageBubble} from "../ChatMessageBubble";
+import {PaywallContext} from "../PaywallContext";
 import type {DisplayMessage} from "../types";
 
 function assistantMessage(patch: Partial<DisplayMessage>): DisplayMessage {
@@ -75,7 +76,7 @@ describe("ChatMessageBubble steps accordion", () => {
 });
 
 describe("ChatMessageBubble lock teaser", () => {
-    it("renders the «доступно в полной версии» emphasis as a lock chip", () => {
+    it("renders the «доступно в полной версии» emphasis as an explicit lock chip", () => {
         render(
             <ChatMessageBubble
                 message={assistantMessage({
@@ -84,9 +85,44 @@ describe("ChatMessageBubble lock teaser", () => {
             />,
         );
 
-        const chip = screen.getByText(/доступно в полной версии/);
+        const chip = screen.getByRole("button", {name: /🔒 в полной версии/});
         expect(chip).toBeInTheDocument();
-        expect(chip.closest("span")).toHaveClass("bg-muted");
+        expect(chip).toHaveClass("bg-muted");
+    });
+
+    it("opens the paywall when the lock chip is clicked", async () => {
+        const user = userEvent.setup();
+        const openPaywall = vi.fn();
+        render(
+            <PaywallContext.Provider value={openPaywall}>
+                <ChatMessageBubble
+                    message={assistantMessage({
+                        content: "Нашёл запись: 🔒 _доступно в полной версии_",
+                    })}
+                />
+            </PaywallContext.Provider>,
+        );
+
+        await user.click(screen.getByRole("button", {name: /в полной версии/}));
+        expect(openPaywall).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders the «🖼 🔒» image teaser as a clickable image chip", async () => {
+        const user = userEvent.setup();
+        const openPaywall = vi.fn();
+        render(
+            <PaywallContext.Provider value={openPaywall}>
+                <ChatMessageBubble
+                    message={assistantMessage({content: "Фото документа: 🖼 🔒"})}
+                />
+            </PaywallContext.Provider>,
+        );
+
+        const chip = screen.getByRole("button", {name: /🖼 🔒 в полной версии/});
+        await user.click(chip);
+        expect(openPaywall).toHaveBeenCalledTimes(1);
+        // surrounding text is untouched
+        expect(screen.getByText(/Фото документа:/)).toBeInTheDocument();
     });
 
     it("keeps unrelated emphasis as plain italic text", () => {
@@ -98,5 +134,55 @@ describe("ChatMessageBubble lock teaser", () => {
 
         const em = screen.getByText("важно");
         expect(em.tagName.toLowerCase()).toBe("em");
+    });
+});
+
+describe("ChatMessageBubble inline images", () => {
+    it("renders markdown images as lazy thumbnails", () => {
+        render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    content: "Скан записи: ![ревизия 1816](https://example.com/scan.jpg)",
+                })}
+            />,
+        );
+
+        const img = screen.getByRole("img", {name: "ревизия 1816"});
+        expect(img).toHaveAttribute("loading", "lazy");
+        expect(img).toHaveAttribute("src", "https://example.com/scan.jpg");
+        expect(img.className).toContain("max-h-[200px]");
+    });
+
+    it("opens a lightbox with the full image on click", async () => {
+        const user = userEvent.setup();
+        render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    content: "![ревизия 1816](https://example.com/scan.jpg)",
+                })}
+            />,
+        );
+
+        await user.click(screen.getByRole("button", {name: /Открыть изображение/}));
+        const dialog = screen.getByRole("dialog");
+        expect(dialog).toBeInTheDocument();
+        // thumbnail + lightbox copy
+        expect(screen.getAllByRole("img", {name: "ревизия 1816"})).toHaveLength(2);
+    });
+
+    it("falls back to an «изображение недоступно» block when the image fails to load", () => {
+        render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    content: "![метрика Одессы](https://hotlink-blocked.example/x.png)",
+                })}
+            />,
+        );
+
+        fireEvent.error(screen.getByRole("img", {name: "метрика Одессы"}));
+        expect(
+            screen.getByText("Изображение недоступно: метрика Одессы"),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("img")).not.toBeInTheDocument();
     });
 });

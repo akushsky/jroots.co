@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {Link} from "react-router-dom";
-import {Coins, PanelLeft} from "lucide-react";
+import {Coins, PanelLeft, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {
@@ -15,6 +15,7 @@ import {SessionSidebar} from "./SessionSidebar";
 import {ChatMessageBubble} from "./ChatMessageBubble";
 import {ChatInput} from "./ChatInput";
 import {Paywall} from "./Paywall";
+import {PaywallContext} from "./PaywallContext";
 import {extractSteps} from "./steps";
 import type {DisplayMessage} from "./types";
 
@@ -38,6 +39,8 @@ export default function ChatPage() {
     const [streaming, setStreaming] = useState(false);
     const [loading, setLoading] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [paywallOpen, setPaywallOpen] = useState(false);
+    const openPaywall = useCallback(() => setPaywallOpen(true), []);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -224,7 +227,8 @@ export default function ChatPage() {
     const showPaywall = credits !== null && credits.searches_left === 0 && !streaming;
 
     return (
-        <div className="relative flex h-[calc(100vh-5rem)] gap-4 px-4 md:px-6">
+        <PaywallContext.Provider value={openPaywall}>
+            <div className="relative flex h-[calc(100vh-5rem)] gap-4 px-4 md:px-6">
             <aside
                 className={cn(
                     "w-72 max-w-[85vw] shrink-0 bg-card rounded-lg border border-border overflow-hidden",
@@ -330,6 +334,33 @@ export default function ChatPage() {
                     </p>
                 </footer>
             </main>
-        </div>
+
+            {paywallOpen && (
+                <div
+                    className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex justify-center items-center z-50 p-4"
+                    onClick={() => setPaywallOpen(false)}
+                >
+                    <div
+                        role="dialog"
+                        aria-label="Тарифы"
+                        className="bg-card rounded-lg shadow-xl max-w-2xl w-full p-6 relative border-t-2 border-accent"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setPaywallOpen(false)}
+                            className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Закрыть"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <Paywall
+                            title="Полная версия записи"
+                            description="Ссылки на источники, сканы документов и полный текст записей доступны на платных тарифах."
+                        />
+                    </div>
+                </div>
+            )}
+            </div>
+        </PaywallContext.Provider>
     );
 }

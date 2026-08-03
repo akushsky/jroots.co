@@ -169,6 +169,33 @@ describe("ChatPage", () => {
         );
     });
 
+    it("opens the tariffs modal when a lock chip in an answer is clicked", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getSession).mockResolvedValue({
+            ...sessionSummary,
+            messages: [
+                {id: "m1", role: "user", content: "Есть ссылки?"},
+                {id: "m2", role: "assistant", content: "Запись найдена: 🔒 _доступно в полной версии_"},
+            ],
+        });
+
+        renderChat();
+
+        // balance is 3 > 0 — footer paywall is not shown, input is available
+        expect(await screen.findByLabelText("Сообщение ассистенту")).toBeInTheDocument();
+
+        await user.click(await screen.findByRole("button", {name: /в полной версии/}));
+
+        const dialog = await screen.findByRole("dialog", {name: "Тарифы"});
+        expect(dialog).toBeInTheDocument();
+        expect(screen.getByText("Полная версия записи")).toBeInTheDocument();
+        expect(screen.getByText(/«Дело»/)).toBeInTheDocument();
+        expect(screen.getByText("$25")).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", {name: "Закрыть"}));
+        expect(screen.queryByRole("dialog", {name: "Тарифы"})).not.toBeInTheDocument();
+    });
+
     it("shows paywall instead of input when searches are exhausted", async () => {
         vi.mocked(getCredits).mockResolvedValue({searches_left: 0, scans_left: 0});
         renderChat();
