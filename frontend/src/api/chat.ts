@@ -1,3 +1,4 @@
+import axios from "axios";
 import {apiClient} from "@/api/api";
 import {SSEParser} from "@/lib/sse";
 
@@ -70,11 +71,62 @@ export const getSession = async (sessionId: string): Promise<ChatSession> =>
 export const getCredits = async (): Promise<Credits> =>
     (await apiClient.get("/credits")).data;
 
+export interface ScanMetadata {
+    doc_type: string;
+    names: string[];
+    dates: string[];
+    place: string;
+}
+
+export interface ScanUploadResult {
+    scan_id: number;
+    status: "done" | "error";
+    extracted_text: string;
+    metadata: ScanMetadata;
+    model_used: string;
+    watermarked: boolean;
+}
+
+export type ScanUploadErrorCode = "no_scans_left" | "too_large" | "unsupported_type" | "unknown";
+
+export class ScanUploadError extends Error {
+    constructor(
+        public readonly code: ScanUploadErrorCode,
+        message: string,
+    ) {
+        super(message);
+        this.name = "ScanUploadError";
+    }
+}
+
+export const uploadScan = async (sessionId: string, file: File): Promise<ScanUploadResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+        return (await apiClient.post(`/chat/sessions/${sessionId}/scans`, formData)).data;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            const status = error.response.status;
+            if (status === 402) {
+                throw new ScanUploadError("no_scans_left", "Сканы закончились");
+            }
+            if (status === 413) {
+                throw new ScanUploadError("too_large", "Файл больше 10 МБ — сожмите или обрежьте скан");
+            }
+            if (status === 415) {
+                throw new ScanUploadError("unsupported_type", "Поддерживаются только JPEG, PNG и TIFF");
+            }
+        }
+        throw new ScanUploadError("unknown", "Не удалось обработать скан. Попробуйте ещё раз.");
+    }
+};
+
 export async function streamMessage(
     sessionId: string,
     content: string,
     callbacks: StreamCallbacks,
     signal?: AbortSignal,
+    scanIds?: number[],
 ): Promise<StreamResult> {
     const token = localStorage.getItem("token");
     const response = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
@@ -84,7 +136,7 @@ export async function streamMessage(
             Accept: "text/event-stream",
             ...(token ? {Authorization: `Bearer ${token}`} : {}),
         },
-        body: JSON.stringify({content}),
+        body: JSON.stringify(scanIds && scanIds.length > 0 ? {content, scan_ids: scanIds} : {content}),
         signal,
     });
 

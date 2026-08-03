@@ -39,7 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ChatMessage, ChatSession, Search
-from app.services import credits, llm_router
+from app.services import credits, llm_router, scan_pipeline
 from app.services import mcp_client as mcp_client_module
 from app.services.credits import InsufficientCredits
 from app.services.mcp_client import McpArchiveClient, McpUnavailableError
@@ -82,11 +82,19 @@ async def run_agent_cycle(
     user_content: str,
     *,
     mcp_client: McpArchiveClient | None = None,
+    scan_ids: list[int] | None = None,
 ) -> AsyncGenerator[tuple[str, dict[str, Any]], None]:
     """Run one full agent turn for a user message, yielding SSE events."""
 
     # 1. Persist the user message so it survives capped/error replies.
-    db.add(ChatMessage(session_id=session.id, role="user", content=user_content))
+    db.add(
+        ChatMessage(
+            session_id=session.id,
+            role="user",
+            content=user_content,
+            scan_ids=scan_ids,
+        )
+    )
     await db.commit()
 
     # 2. Free-tier daily budget → graceful in-band stop (mirrors the M1 path).
@@ -359,17 +367,15 @@ async def _paywall_events(
 
 
 async def _build_messages(db: AsyncSession, session: ChatSession) -> list[dict]:
-    """System prompt + persisted conversation (user/assistant only)."""
+    """System prompt + persisted conversation (user/assistant only), with
+    scan context blocks appended to messages carrying scan attachments."""
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session.id)
         .order_by(ChatMessage.created_at, ChatMessage.id)
     )
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in result.scalars().all()
-        if m.role in ("user", "assistant")
-    ]
+    rows = [m for m in result.scalars().all() if m.role in ("user", "assistant")]
+    history = await scan_pipeline.augment_history_with_scans(db, rows)
     return [{"role": "system", "content": SYSTEM_PROMPT}, *history]
 
 

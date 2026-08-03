@@ -3,21 +3,35 @@ import {render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router-dom";
 import ChatPage from "../ChatPage";
-import {createSession, getCredits, getSession, listSessions, streamMessage} from "@/api/chat";
-import type {StreamCallbacks} from "@/api/chat";
+import {createSession, getCredits, getSession, listSessions, streamMessage, uploadScan, ScanUploadError} from "@/api/chat";
+import type {StreamCallbacks, ScanUploadResult} from "@/api/chat";
 
-vi.mock("@/api/chat", () => ({
-    createSession: vi.fn(),
-    listSessions: vi.fn(),
-    getSession: vi.fn(),
-    getCredits: vi.fn(),
-    streamMessage: vi.fn(),
-}));
+vi.mock("@/api/chat", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/api/chat")>();
+    return {
+        createSession: vi.fn(),
+        listSessions: vi.fn(),
+        getSession: vi.fn(),
+        getCredits: vi.fn(),
+        streamMessage: vi.fn(),
+        uploadScan: vi.fn(),
+        ScanUploadError: actual.ScanUploadError,
+    };
+});
 
 const sessionSummary = {
     id: "s1",
     title: "Ивановы из Одессы",
     created_at: "2026-08-01T10:00:00Z",
+};
+
+const scanDone: ScanUploadResult = {
+    scan_id: 7,
+    status: "done",
+    extracted_text: "Родился Иван…",
+    metadata: {doc_type: "metric_book", names: ["Иван"], dates: ["1881"], place: "Одесса"},
+    model_used: "test-ocr",
+    watermarked: false,
 };
 
 function renderChat() {
@@ -226,5 +240,118 @@ describe("ChatPage", () => {
         await waitFor(() =>
             expect(screen.getByLabelText("Сообщение ассистенту")).not.toBeDisabled(),
         );
+    });
+
+    it("uploads a scan: chip goes from «Обработка» to «Готово»", async () => {
+        const user = userEvent.setup();
+        let resolveUpload: (result: ScanUploadResult) => void = () => {};
+        vi.mocked(uploadScan).mockImplementation(
+            () =>
+                new Promise<ScanUploadResult>((resolve) => {
+                    resolveUpload = resolve;
+                }),
+        );
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        const file = new File(["scan"], "metrika.jpg", {type: "image/jpeg"});
+        await user.upload(screen.getByLabelText("Файл скана"), file);
+
+        expect(await screen.findByText("Обработка…")).toBeInTheDocument();
+        expect(screen.getByText("metrika.jpg")).toBeInTheDocument();
+
+        resolveUpload(scanDone);
+        expect(await screen.findByText("Готово")).toBeInTheDocument();
+        expect(uploadScan).toHaveBeenCalledWith("s1", file);
+    });
+
+    it("opens the tariffs modal when the scan pool is exhausted (402)", async () => {
+        const user = userEvent.setup();
+        vi.mocked(uploadScan).mockRejectedValue(
+            new ScanUploadError("no_scans_left", "Сканы закончились"),
+        );
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+
+        await user.click(await screen.findByRole("button", {name: /Сканы закончились/}));
+        expect(await screen.findByRole("dialog", {name: "Тарифы"})).toBeInTheDocument();
+    });
+
+    it("sends the message with scan_ids and moves the chip into the user bubble", async () => {
+        const user = userEvent.setup();
+        vi.mocked(uploadScan).mockResolvedValue(scanDone);
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+        await screen.findByText("Готово");
+
+        await user.type(screen.getByLabelText("Сообщение ассистенту"), "Что в этом документе?{Enter}");
+
+        await waitFor(() =>
+            expect(streamMessage).toHaveBeenCalledWith(
+                "s1",
+                "Что в этом документе?",
+                expect.anything(),
+                expect.anything(),
+                [7],
+            ),
+        );
+
+        // chip left the input area (no more status/remove controls)…
+        await waitFor(() => expect(screen.queryByText("Готово")).not.toBeInTheDocument());
+        expect(
+            screen.queryByRole("button", {name: "Удалить скан metrika.jpg"}),
+        ).not.toBeInTheDocument();
+        // …and lives on in the user bubble as thumbnail + file name
+        expect(screen.getByText("metrika.jpg")).toBeInTheDocument();
+        // extracted text is never rendered in the dialog
+        expect(screen.queryByText(/Родился Иван/)).not.toBeInTheDocument();
+    });
+
+    it("refreshes the scans counter after an upload", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getCredits)
+            .mockResolvedValueOnce({searches_left: 3, scans_left: 5})
+            .mockResolvedValue({searches_left: 3, scans_left: 4});
+        vi.mocked(uploadScan).mockResolvedValue(scanDone);
+
+        renderChat();
+        expect(await screen.findByText(/Сканов: 5/)).toBeInTheDocument();
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+
+        expect(await screen.findByText(/Сканов: 4/)).toBeInTheDocument();
+    });
+
+    it("shows an inline error on the chip when the server rejects the file", async () => {
+        const user = userEvent.setup();
+        vi.mocked(uploadScan).mockRejectedValue(
+            new ScanUploadError("too_large", "Файл больше 10 МБ — сожмите или обрежьте скан"),
+        );
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+
+        expect(await screen.findByText(/сожмите или обрежьте скан/)).toBeInTheDocument();
     });
 });

@@ -1,5 +1,11 @@
 import type {CappedReason} from "@/api/chat";
 
+export interface MessageScan {
+    fileName: string;
+    /** Object URL of the uploaded file — thumbnail inside the user bubble. */
+    previewUrl: string;
+}
+
 export interface DisplayMessage {
     id: string;
     role: "user" | "assistant";
@@ -10,6 +16,8 @@ export interface DisplayMessage {
     steps?: string[];
     /** True while this message is the actively streaming one — steps accordion stays open. */
     live?: boolean;
+    /** Scans attached to a user message (thumbnail + file name only; extracted text stays in agent context). */
+    scans?: MessageScan[];
     capped?: CappedReason | null;
     error?: boolean;
 }

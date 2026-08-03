@@ -37,7 +37,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import ChatMessage, ChatSession, ToolCallLog, User
 from app.services import credits as credits_service
-from app.services import llm_router
+from app.services import llm_router, scan_pipeline
 from app.services.agent_loop import run_agent_cycle
 from app.services.auth import get_current_user
 from app.services.prompts import SYSTEM_PROMPT
@@ -54,6 +54,7 @@ LLM_ERROR_MESSAGE = "Ошибка модели, попробуйте ещё ра
 
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
+    scan_ids: list[int] | None = Field(default=None, max_length=10)
 
     @field_validator("content")
     @classmethod
@@ -320,7 +321,9 @@ async def _build_llm_messages(db: AsyncSession, session: ChatSession) -> list[di
         .where(ChatMessage.session_id == session.id)
         .order_by(ChatMessage.created_at, ChatMessage.id)
     )
-    history = [{"role": m.role, "content": m.content} for m in result.scalars().all()]
+    history = await scan_pipeline.augment_history_with_scans(
+        db, list(result.scalars().all())
+    )
     return [{"role": "system", "content": SYSTEM_PROMPT}, *history]
 
 
@@ -399,7 +402,10 @@ async def _event_stream(
 
 
 async def _agent_json_reply(
-    db: AsyncSession, session: ChatSession, content: str
+    db: AsyncSession,
+    session: ChatSession,
+    content: str,
+    scan_ids: list[int] | None = None,
 ) -> dict:
     """JSON mode (tests/CLI): drain the agent cycle into one payload."""
     tokens: list[str] = []
@@ -408,7 +414,7 @@ async def _agent_json_reply(
     error_message: str | None = None
     capped = False
     paywall = False
-    async for event, data in run_agent_cycle(db, session, content):
+    async for event, data in run_agent_cycle(db, session, content, scan_ids=scan_ids):
         if event == "token":
             tokens.append(data["text"])
         elif event == "usage":
@@ -453,18 +459,34 @@ async def post_message(
     session = await _get_owned_session(db, session_id, current_user.id)
     wants_sse = "text/event-stream" in request.headers.get("accept", "")
 
+    scan_ids = sorted(set(body.scan_ids)) if body.scan_ids else None
+    if scan_ids:
+        try:
+            await scan_pipeline.load_owned_scans(db, current_user.id, scan_ids)
+        except scan_pipeline.ForeignScanError:
+            raise HTTPException(status_code=400, detail="Скан не найден")
+
     # Agent mode (M2): the cycle owns user-message persistence, budget/token
     # caps, paywall, charging and the tool-calling loop.
     if get_settings().jroots_mcp_enabled:
         if wants_sse:
             return StreamingResponse(
-                _event_stream(run_agent_cycle(db, session, body.content)),
+                _event_stream(
+                    run_agent_cycle(db, session, body.content, scan_ids=scan_ids)
+                ),
                 media_type="text/event-stream",
             )
-        return await _agent_json_reply(db, session, body.content)
+        return await _agent_json_reply(db, session, body.content, scan_ids=scan_ids)
 
     # Persist the user message first so it survives a failed/capped reply.
-    db.add(ChatMessage(session_id=session.id, role=_ROLE_USER, content=body.content))
+    db.add(
+        ChatMessage(
+            session_id=session.id,
+            role=_ROLE_USER,
+            content=body.content,
+            scan_ids=scan_ids,
+        )
+    )
     await db.commit()
 
     if session.is_free and await llm_router.is_daily_budget_exceeded(db):

@@ -1,6 +1,13 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {streamMessage} from "../chat";
-import type {StreamCallbacks} from "../chat";
+import {streamMessage, uploadScan, ScanUploadError} from "../chat";
+import type {StreamCallbacks, ScanUploadResult} from "../chat";
+import {apiClient} from "@/api/api";
+
+vi.mock("@/api/api", () => ({
+    apiClient: {
+        post: vi.fn(),
+    },
+}));
 
 function sseStream(chunks: string[]): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
@@ -135,5 +142,82 @@ describe("streamMessage", () => {
 
         await expect(streamMessage("s1", "x", makeCallbacks())).rejects.toThrow();
         expect(localStorage.getItem("token")).toBeNull();
+    });
+
+    it("includes scan_ids in the message body when provided", async () => {
+        mockFetchSSEResponse(['event: done\ndata: {"session_id":"s1","message_id":"m1","capped":false}\n\n']);
+
+        await streamMessage("s1", "привет", makeCallbacks(), undefined, [3, 7]);
+
+        expect(fetch).toHaveBeenCalledWith(
+            "/api/chat/sessions/s1/messages",
+            expect.objectContaining({
+                body: JSON.stringify({content: "привет", scan_ids: [3, 7]}),
+            }),
+        );
+    });
+});
+
+function axiosError(status: number) {
+    const error = new Error(`Request failed with status code ${status}`);
+    Object.assign(error, {isAxiosError: true, response: {status, data: {}}});
+    return error;
+}
+
+describe("uploadScan", () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    const scanResult: ScanUploadResult = {
+        scan_id: 7,
+        status: "done",
+        extracted_text: "текст",
+        metadata: {doc_type: "metric_book", names: [], dates: [], place: ""},
+        model_used: "ocr",
+        watermarked: false,
+    };
+
+    it("posts the file as multipart form data and returns the result", async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({data: scanResult});
+        const file = new File(["scan"], "metrika.jpg", {type: "image/jpeg"});
+
+        const result = await uploadScan("s1", file);
+
+        expect(result).toEqual(scanResult);
+        expect(apiClient.post).toHaveBeenCalledWith(
+            "/chat/sessions/s1/scans",
+            expect.any(FormData),
+        );
+        const formData = vi.mocked(apiClient.post).mock.calls[0][1] as FormData;
+        expect(formData.get("file")).toBe(file);
+    });
+
+    it("maps 402 to no_scans_left", async () => {
+        vi.mocked(apiClient.post).mockRejectedValue(axiosError(402));
+
+        const error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
+        expect(error).toBeInstanceOf(ScanUploadError);
+        expect((error as ScanUploadError).code).toBe("no_scans_left");
+    });
+
+    it("maps 413 to too_large and 415 to unsupported_type", async () => {
+        vi.mocked(apiClient.post).mockRejectedValue(axiosError(413));
+        let error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
+        expect((error as ScanUploadError).code).toBe("too_large");
+
+        vi.mocked(apiClient.post).mockRejectedValue(axiosError(415));
+        error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
+        expect((error as ScanUploadError).code).toBe("unsupported_type");
+    });
+
+    it("maps any other failure to unknown", async () => {
+        vi.mocked(apiClient.post).mockRejectedValue(axiosError(500));
+        let error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
+        expect((error as ScanUploadError).code).toBe("unknown");
+
+        vi.mocked(apiClient.post).mockRejectedValue(new Error("network down"));
+        error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
+        expect((error as ScanUploadError).code).toBe("unknown");
     });
 });

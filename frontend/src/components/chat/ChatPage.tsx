@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {Link} from "react-router-dom";
-import {Coins, PanelLeft, X} from "lucide-react";
+import {Coins, PanelLeft, ScanLine, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {
@@ -9,14 +9,17 @@ import {
     getSession,
     listSessions,
     streamMessage,
+    uploadScan,
+    ScanUploadError,
 } from "@/api/chat";
-import type {ChatSessionSummary, Credits} from "@/api/chat";
+import type {CappedReason, ChatSessionSummary, Credits, DoneEvent, UsageEvent} from "@/api/chat";
 import {SessionSidebar} from "./SessionSidebar";
 import {ChatMessageBubble} from "./ChatMessageBubble";
 import {ChatInput} from "./ChatInput";
 import {Paywall} from "./Paywall";
 import {PaywallContext} from "./PaywallContext";
 import {extractSteps} from "./steps";
+import type {ScanAttachment} from "./scans";
 import type {DisplayMessage} from "./types";
 
 const CONNECTION_LOST = "Соединение прервано, попробуйте ещё раз";
@@ -41,9 +44,29 @@ export default function ChatPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [paywallOpen, setPaywallOpen] = useState(false);
     const openPaywall = useCallback(() => setPaywallOpen(true), []);
+    const [attachments, setAttachments] = useState<ScanAttachment[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
+
+    const patchAttachment = useCallback((localId: string, patch: Partial<ScanAttachment>) => {
+        setAttachments((prev) => prev.map((a) => (a.localId === localId ? {...a, ...patch} : a)));
+    }, []);
+
+    const clearAttachments = useCallback(() => {
+        setAttachments((prev) => {
+            for (const a of prev) URL.revokeObjectURL(a.previewUrl);
+            return [];
+        });
+    }, []);
+
+    const removeAttachment = useCallback((localId: string) => {
+        setAttachments((prev) => {
+            const target = prev.find((a) => a.localId === localId);
+            if (target) URL.revokeObjectURL(target.previewUrl);
+            return prev.filter((a) => a.localId !== localId);
+        });
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -78,6 +101,7 @@ export default function ChatPage() {
         setActiveId(id);
         setSidebarOpen(false);
         setSessionTokens(null);
+        clearAttachments();
         try {
             const session = await getSession(id);
             setMessages(
@@ -94,7 +118,7 @@ export default function ChatPage() {
                 {id: nextTempId(), role: "assistant", content: "Не удалось загрузить диалог", error: true},
             ]);
         }
-    }, []);
+    }, [clearAttachments]);
 
     const startNewSearch = useCallback(() => {
         abortRef.current?.abort();
@@ -102,7 +126,63 @@ export default function ChatPage() {
         setMessages([]);
         setSessionTokens(null);
         setSidebarOpen(false);
-    }, []);
+        clearAttachments();
+    }, [clearAttachments]);
+
+    const attachScan = useCallback(
+        async (file: File) => {
+            const localId = nextTempId();
+            const previewUrl = URL.createObjectURL(file);
+            setAttachments((prev) => [
+                ...prev,
+                {localId, fileName: file.name, previewUrl, status: "uploading"},
+            ]);
+
+            // The scans endpoint is session-scoped: materialize the session now
+            // if the user attaches a file before the first message.
+            let sessionId = activeId;
+            if (!sessionId) {
+                try {
+                    const session = await createSession();
+                    sessionId = session.id;
+                    setSessions((prev) => [session, ...prev]);
+                    setActiveId(session.id);
+                } catch {
+                    patchAttachment(localId, {
+                        status: "error",
+                        errorText: "Не удалось создать поиск. Попробуйте ещё раз.",
+                    });
+                    return;
+                }
+            }
+
+            try {
+                const result = await uploadScan(sessionId, file);
+                if (result.status === "done") {
+                    patchAttachment(localId, {status: "done", scanId: result.scan_id});
+                    getCredits().then(setCredits).catch(() => {});
+                } else {
+                    patchAttachment(localId, {
+                        status: "error",
+                        errorText: "Не удалось распознать документ — попробуйте скан получше.",
+                    });
+                }
+            } catch (error) {
+                if (error instanceof ScanUploadError && error.code === "no_scans_left") {
+                    patchAttachment(localId, {status: "error", errorCode: "no_scans_left"});
+                } else {
+                    patchAttachment(localId, {
+                        status: "error",
+                        errorText:
+                            error instanceof ScanUploadError
+                                ? error.message
+                                : "Не удалось обработать скан. Попробуйте ещё раз.",
+                    });
+                }
+            }
+        },
+        [activeId, patchAttachment],
+    );
 
     const patchAssistant = useCallback((id: string, patch: Partial<DisplayMessage>) => {
         setMessages((prev) => prev.map((m) => (m.id === id ? {...m, ...patch} : m)));
@@ -133,82 +213,97 @@ export default function ChatPage() {
                 return;
             }
 
+            const doneScans = attachments.filter((a) => a.status === "done" && a.scanId !== undefined);
+            const scanIds = doneScans.map((a) => a.scanId as number);
+
             const assistantId = nextTempId();
             setMessages((prev) => [
                 ...prev,
-                {id: nextTempId(), role: "user", content},
+                {
+                    id: nextTempId(),
+                    role: "user",
+                    content,
+                    ...(doneScans.length > 0 && {
+                        scans: doneScans.map((a) => ({fileName: a.fileName, previewUrl: a.previewUrl})),
+                    }),
+                },
                 {id: assistantId, role: "assistant", content: "", pending: true, live: true},
             ]);
+            // Sent scans move into the bubble; failed/unsent ones stay editable above the input.
+            if (doneScans.length > 0) {
+                const sentIds = new Set(doneScans.map((a) => a.localId));
+                setAttachments((prev) => prev.filter((a) => !sentIds.has(a.localId)));
+            }
             setStreaming(true);
 
             const controller = new AbortController();
             abortRef.current = controller;
 
             try {
-                const result = await streamMessage(
-                    sessionId,
-                    content,
-                    {
-                        onToken: (text) => {
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantId
-                                        ? {...m, pending: false, content: m.content + text}
-                                        : m,
-                                ),
-                            );
-                        },
-                        onStep: (text) => {
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantId
-                                        ? {...m, steps: [...(m.steps ?? []), text]}
-                                        : m,
-                                ),
-                            );
-                        },
-                        onUsage: (usage) => setSessionTokens(usage.session_tokens_total),
-                        onCapped: (reason) => patchAssistant(assistantId, {capped: reason}),
-                        onDone: (done) => {
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantId
-                                        ? {
-                                            ...m,
-                                            id: done.message_id,
-                                            pending: false,
-                                            live: false,
-                                            capped: m.capped ?? (done.capped ? "token_cap" : null),
-                                        }
-                                        : m,
-                                ),
-                            );
-                            getCredits().then(setCredits).catch(() => {});
-                            // Sync sidebar titles/last_message with backend truth;
-                            // keep local sessions the backend list doesn't know yet.
-                            listSessions()
-                                .then((fresh) =>
-                                    setSessions((prev) => {
-                                        const merged = [...fresh];
-                                        for (const s of prev) {
-                                            if (!fresh.some((f) => f.id === s.id)) merged.push(s);
-                                        }
-                                        return merged;
-                                    }),
-                                )
-                                .catch(() => {});
-                        },
-                        onError: (message) => {
-                            patchAssistant(assistantId, {
-                                pending: false,
-                                live: false,
-                                content: message || "Что-то пошло не так. Попробуйте ещё раз.",
-                                error: true,
-                            });
-                        },
+                const callbacks = {
+                    onToken: (text: string) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {...m, pending: false, content: m.content + text}
+                                    : m,
+                            ),
+                        );
                     },
-                    controller.signal,
-                );
+                    onStep: (text: string) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {...m, steps: [...(m.steps ?? []), text]}
+                                    : m,
+                            ),
+                        );
+                    },
+                    onUsage: (usage: UsageEvent) => setSessionTokens(usage.session_tokens_total),
+                    onCapped: (reason: CappedReason) => patchAssistant(assistantId, {capped: reason}),
+                    onDone: (done: DoneEvent) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === assistantId
+                                    ? {
+                                        ...m,
+                                        id: done.message_id,
+                                        pending: false,
+                                        live: false,
+                                        capped: m.capped ?? (done.capped ? "token_cap" : null),
+                                    }
+                                    : m,
+                            ),
+                        );
+                        getCredits().then(setCredits).catch(() => {});
+                        // Sync sidebar titles/last_message with backend truth;
+                        // keep local sessions the backend list doesn't know yet.
+                        listSessions()
+                            .then((fresh) =>
+                                setSessions((prev) => {
+                                    const merged = [...fresh];
+                                    for (const s of prev) {
+                                        if (!fresh.some((f) => f.id === s.id)) merged.push(s);
+                                    }
+                                    return merged;
+                                }),
+                            )
+                            .catch(() => {});
+                    },
+                    onError: (message: string) => {
+                        patchAssistant(assistantId, {
+                            pending: false,
+                            live: false,
+                            content: message || "Что-то пошло не так. Попробуйте ещё раз.",
+                            error: true,
+                        });
+                    },
+                };
+                // 4-arg form when there are no scans: backend treats a missing
+                // scan_ids key and an empty array differently (validation).
+                const result = scanIds.length > 0
+                    ? await streamMessage(sessionId, content, callbacks, controller.signal, scanIds)
+                    : await streamMessage(sessionId, content, callbacks, controller.signal);
                 if (!result.finished) {
                     patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
                 }
@@ -221,7 +316,7 @@ export default function ChatPage() {
                 abortRef.current = null;
             }
         },
-        [streaming, activeId, patchAssistant],
+        [streaming, activeId, attachments, patchAssistant],
     );
 
     const showPaywall = credits !== null && credits.searches_left === 0 && !streaming;
@@ -284,6 +379,12 @@ export default function ChatPage() {
                                 Осталось поисков: {credits.searches_left}
                             </span>
                         )}
+                        {credits !== null && (
+                            <span className="inline-flex items-center gap-1.5 text-sm bg-secondary rounded-full px-3 py-1">
+                                <ScanLine className="w-3.5 h-3.5 text-accent" />
+                                Сканов: {credits.scans_left}
+                            </span>
+                        )}
                     </div>
                 </header>
 
@@ -324,7 +425,13 @@ export default function ChatPage() {
                     {showPaywall ? (
                         <Paywall />
                     ) : (
-                        <ChatInput disabled={streaming || loading} onSend={send} />
+                        <ChatInput
+                            disabled={streaming || loading}
+                            attachments={attachments}
+                            onAttachFile={attachScan}
+                            onRemoveAttachment={removeAttachment}
+                            onSend={send}
+                        />
                     )}
                     <p className="text-xs text-muted-foreground mt-2 text-center">
                         Ответы ассистента — ориентир для поиска, а не гарантия. Проверяйте архивные ссылки.{" "}

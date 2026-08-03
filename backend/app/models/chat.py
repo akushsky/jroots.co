@@ -43,6 +43,8 @@ class ChatMessage(Base):
     role = Column(String(16), nullable=False)  # user | assistant | system
     content = Column(Text, nullable=False)
     tokens = Column(Integer, nullable=True)
+    # Scan ids attached to this message (user messages only).
+    scan_ids = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -89,9 +91,13 @@ class Scan(Base):
     user_id = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    session_id = Column(
+        Integer, ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True
+    )
     file_path = Column(String(512), nullable=True)
     status = Column(String(32), nullable=True)
     extracted_text = Column(Text, nullable=True)
     metadata_json = Column(JSON, nullable=True)
     model_used = Column(String(64), nullable=True)
+    watermarked = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())

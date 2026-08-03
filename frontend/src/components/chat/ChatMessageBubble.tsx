@@ -151,7 +151,28 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
                     {message.pending ? (
                         <TypingIndicator />
                     ) : isUser ? (
-                        message.content
+                        <>
+                            {message.scans && message.scans.length > 0 && (
+                                <span className="flex flex-wrap justify-end gap-2 mb-2">
+                                    {message.scans.map((scan) => (
+                                        <span
+                                            key={`${scan.previewUrl}-${scan.fileName}`}
+                                            className="inline-flex items-center gap-1.5 rounded-lg bg-background/20 px-2 py-1"
+                                        >
+                                            <img
+                                                src={scan.previewUrl}
+                                                alt=""
+                                                className="w-8 h-8 rounded object-cover"
+                                            />
+                                            <span className="text-xs max-w-[140px] truncate">
+                                                {scan.fileName}
+                                            </span>
+                                        </span>
+                                    ))}
+                                </span>
+                            )}
+                            {message.content}
+                        </>
                     ) : (
                         <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
                     )}

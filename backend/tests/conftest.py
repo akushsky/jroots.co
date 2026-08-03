@@ -10,6 +10,10 @@ os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-bot-token")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "12345")
 # Legacy M1 chat path by default; agent-mode tests opt in per-test.
 os.environ.setdefault("JROOTS_MCP_ENABLED", "false")
+# Hard-set (not setdefault): tests must be deterministic even when a local
+# backend/.env overrides the defaults — pydantic reads .env, but real env
+# vars win.
+os.environ["FREE_SESSIONS_PER_DAY"] = "2"
 
 import hashlib
 import io
