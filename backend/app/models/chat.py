@@ -62,6 +62,26 @@ class Search(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class ToolCallLog(Base):
+    __tablename__ = "tool_call_logs"
+    __table_args__ = (
+        Index("ix_tool_call_logs_session_created", "session_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(
+        Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    tool = Column(String(64), nullable=False)
+    database = Column(String(128), nullable=True)
+    args_json = Column(JSON, nullable=True)
+    results_count = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    status = Column(String(16), nullable=False)  # ok | error | cap_blocked
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class Scan(Base):
     __tablename__ = "scans"
 

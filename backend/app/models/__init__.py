@@ -4,7 +4,7 @@ from app.models.image import Image, ImageSource
 from app.models.search_object import SearchObject, ImagePurchase
 from app.models.credits import Credit, CreditTransaction
 from app.models.billing import Payment, Subscription, DailyBudget
-from app.models.chat import ChatSession, ChatMessage, Search, Scan
+from app.models.chat import ChatSession, ChatMessage, Search, Scan, ToolCallLog
 
 __all__ = [
     "Base",
@@ -22,4 +22,5 @@ __all__ = [
     "ChatMessage",
     "Search",
     "Scan",
+    "ToolCallLog",
 ]

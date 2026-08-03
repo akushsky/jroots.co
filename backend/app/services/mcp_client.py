@@ -18,7 +18,10 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import get_settings
+from app.models import ToolCallLog
 
 logger = logging.getLogger("jroots")
 
@@ -240,6 +243,7 @@ class McpArchiveClient:
         initial_used: int = 0,
         max_calls: int = 15,
         rate_limit_interval: float = 1.0,
+        db: AsyncSession | None = None,
     ) -> None:
         self._transport = transport
         self.session_id = session_id
@@ -253,6 +257,9 @@ class McpArchiveClient:
         self.empty_searches = 0
         self._tools: list[dict[str, Any]] = []
         self._last_call_at: dict[str, float] = {}
+        # Optional DB handle for the tool_call_logs journal; None in unit
+        # tests that exercise the client without a database.
+        self._db = db
 
     async def open(self) -> None:
         """Connect and fetch the whitelisted tool schemas (OpenAI format)."""
@@ -294,6 +301,13 @@ class McpArchiveClient:
         only when the gateway itself is broken (technical failure).
         """
         if name not in TOOL_WHITELIST:
+            await self._journal(
+                tool=name,
+                database=None,
+                arguments=arguments,
+                status="error",
+                error=f"tool '{name}' is not whitelisted for the chat",
+            )
             return TOOL_UNKNOWN_MESSAGE.format(name=name)
         if self.calls_used >= self.max_calls:
             logger.info(
@@ -302,6 +316,14 @@ class McpArchiveClient:
                 self.user_id,
                 self.calls_used,
                 self.max_calls,
+            )
+            await self._journal(
+                tool=name,
+                database=(
+                    arguments.get("database") if isinstance(arguments, dict) else None
+                ),
+                arguments=arguments,
+                status="cap_blocked",
             )
             return TOOL_CALL_LIMIT_MESSAGE
 
@@ -344,7 +366,46 @@ class McpArchiveClient:
             latency_ms,
             is_error,
         )
+        await self._journal(
+            tool=name,
+            database=database,
+            arguments=arguments,
+            results_count=result_count,
+            latency_ms=latency_ms,
+            status="error" if is_error else "ok",
+            error=result.text if is_error else None,
+        )
         return result.text or EMPTY_RESULT_MESSAGE
+
+    async def _journal(
+        self,
+        *,
+        tool: str,
+        database: str | None,
+        arguments: dict[str, Any],
+        status: str,
+        results_count: int | None = None,
+        latency_ms: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Persist one tool_call_logs row. Commits on its own so the journal
+        survives a technical failure of the rest of the cycle (the cycle has
+        nothing else pending at tool-call time). No-op without a DB handle."""
+        if self._db is None:
+            return
+        self._db.add(
+            ToolCallLog(
+                session_id=self.session_id,
+                tool=tool,
+                database=database,
+                args_json=arguments if isinstance(arguments, dict) else None,
+                results_count=results_count,
+                latency_ms=latency_ms,
+                status=status,
+                error=error,
+            )
+        )
+        await self._db.commit()
 
     async def _call_with_retry(
         self, name: str, arguments: dict[str, Any]
@@ -382,7 +443,11 @@ class McpArchiveClient:
 
 
 def build_mcp_client(
-    *, session_id: int, user_id: int, initial_used: int = 0
+    *,
+    session_id: int,
+    user_id: int,
+    initial_used: int = 0,
+    db: AsyncSession | None = None,
 ) -> McpArchiveClient:
     """Production factory: real streamable-HTTP transport from settings.
 
@@ -402,4 +467,5 @@ def build_mcp_client(
         initial_used=initial_used,
         max_calls=settings.mcp_tool_call_cap,
         rate_limit_interval=settings.mcp_rate_limit_per_db_seconds,
+        db=db,
     )

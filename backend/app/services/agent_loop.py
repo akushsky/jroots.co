@@ -122,6 +122,7 @@ async def run_agent_cycle(
         session_id=session.id,
         user_id=session.user_id,
         initial_used=initial_tool_calls,
+        db=db,
     )
 
     try:

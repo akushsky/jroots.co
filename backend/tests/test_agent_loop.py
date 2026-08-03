@@ -13,6 +13,7 @@ from app.models import (
     CreditTransaction,
     Payment,
     Search,
+    ToolCallLog,
 )
 from app.services import llm_router
 from app.services import mcp_client as mcp_client_module
@@ -114,7 +115,7 @@ def fake_mcp(monkeypatch):
     def install(transport, max_calls=15):
         holder = {}
 
-        def factory(*, session_id, user_id, initial_used=0):
+        def factory(*, session_id, user_id, initial_used=0, db=None):
             client = McpArchiveClient(
                 transport,
                 session_id=session_id,
@@ -122,6 +123,7 @@ def fake_mcp(monkeypatch):
                 initial_used=initial_used,
                 max_calls=max_calls,
                 rate_limit_interval=0,
+                db=db,
             )
             holder["client"] = client
             return client
@@ -777,3 +779,149 @@ async def test_agent_cap_instruction_never_leaks_to_user(
 
     assert frames[-1][0] == "done"
     assert frames[-1][1]["searches_left"] == 4
+
+
+async def _tool_call_rows(db_session, session_id):
+    result = await db_session.execute(
+        select(ToolCallLog)
+        .where(ToolCallLog.session_id == session_id)
+        .order_by(ToolCallLog.id)
+    )
+    return result.scalars().all()
+
+
+async def test_agent_tool_calls_are_journaled(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(
+        script=[McpCallResult(text="Найдено 2 записи:\n1. Метрика\n2. Ревизия")]
+    )
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round(
+                "c1", "search", ['{"database": "gabo", "last_name": "Фалькович"}']
+            ),
+            [_chunk("Нашёл."), _chunk(usage=_usage(10, 5))],
+        ]
+    )
+    user = await create_user(db_session, email="agent-journal@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу Фальковича")
+    assert frames[-1][0] == "done"
+
+    rows = await _tool_call_rows(db_session, session["id"])
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.tool == "search"
+    assert row.database == "gabo"
+    assert row.args_json == {"database": "gabo", "last_name": "Фалькович"}
+    assert row.results_count == 2
+    assert row.latency_ms is not None and row.latency_ms >= 0
+    assert row.status == "ok"
+    assert row.error is None
+
+    # The same journal is exposed over the debug endpoint.
+    response = await client.get(
+        f"/api/chat/sessions/{session['id']}/tool-calls",
+        headers=auth_header(user),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["tool"] == "search"
+    assert payload[0]["args"] == {"database": "gabo", "last_name": "Фалькович"}
+    assert payload[0]["results_count"] == 2
+    assert payload[0]["status"] == "ok"
+    assert payload[0]["created_at"].endswith("+00:00")
+
+
+async def test_agent_error_call_is_journaled(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(
+        script=[McpCallResult(text="Error: Database 'gaboo' is unknown.")]
+    )
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gaboo"}']),
+            [_chunk("Не удалось проверить этот архив."), _chunk(usage=_usage(10, 5))],
+        ]
+    )
+    user = await create_user(db_session, email="agent-jerr@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    assert frames[-1][0] == "done"
+
+    rows = await _tool_call_rows(db_session, session["id"])
+    assert len(rows) == 1
+    assert rows[0].status == "error"
+    assert "unknown" in rows[0].error
+    assert rows[0].results_count == 0
+
+
+async def test_agent_cap_blocked_call_is_journaled(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport, max_calls=1)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            _tool_round("c2", "search", ['{"database": "dako"}']),
+            [_chunk("Итог."), _chunk(usage=_usage(10, 5))],
+        ]
+    )
+    user = await create_user(db_session, email="agent-jcap@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    assert frames[-1][0] == "done"
+
+    rows = await _tool_call_rows(db_session, session["id"])
+    assert [row.status for row in rows] == ["ok", "cap_blocked"]
+    blocked = rows[1]
+    assert blocked.tool == "search"
+    assert blocked.database == "dako"
+    assert blocked.args_json == {"database": "dako"}
+    assert blocked.latency_ms is None
+    assert blocked.results_count is None
+
+
+async def test_tool_calls_endpoint_is_owner_only(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            [_chunk("Ответ."), _chunk(usage=_usage(10, 5))],
+        ]
+    )
+    owner = await create_user(db_session, email="agent-jowner@example.com")
+    other = await create_user(db_session, email="agent-jother@example.com")
+    await _give_credits(db_session, owner, searches=5)
+    session = await _create_session(client, owner)
+    await _post_sse(client, owner, session["id"], "ищу")
+
+    # Anonymous: 401; another user: 404 (same as the session itself).
+    response = await client.get(f"/api/chat/sessions/{session['id']}/tool-calls")
+    assert response.status_code == 401
+    response = await client.get(
+        f"/api/chat/sessions/{session['id']}/tool-calls",
+        headers=auth_header(other),
+    )
+    assert response.status_code == 404
+    response = await client.get(
+        f"/api/chat/sessions/{session['id']}/tool-calls",
+        headers=auth_header(owner),
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 1

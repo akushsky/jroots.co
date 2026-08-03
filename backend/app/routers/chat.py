@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import ChatMessage, ChatSession, User
+from app.models import ChatMessage, ChatSession, ToolCallLog, User
 from app.services import credits as credits_service
 from app.services import llm_router
 from app.services.agent_loop import run_agent_cycle
@@ -253,6 +253,35 @@ async def get_session(
         **_session_dict(session),
         "messages": [_message_dict(m) for m in result.scalars().all()],
     }
+
+
+@router.get("/sessions/{session_id}/tool-calls")
+async def list_tool_calls(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Debug/observability: the MCP tool-call journal of an owned session."""
+    session = await _get_owned_session(db, session_id, current_user.id)
+    result = await db.execute(
+        select(ToolCallLog)
+        .where(ToolCallLog.session_id == session.id)
+        .order_by(ToolCallLog.created_at, ToolCallLog.id)
+    )
+    return [
+        {
+            "id": row.id,
+            "tool": row.tool,
+            "database": row.database,
+            "args": row.args_json,
+            "results_count": row.results_count,
+            "latency_ms": row.latency_ms,
+            "status": row.status,
+            "error": row.error,
+            "created_at": _iso(row.created_at),
+        }
+        for row in result.scalars().all()
+    ]
 
 
 async def _persist_assistant_message(
