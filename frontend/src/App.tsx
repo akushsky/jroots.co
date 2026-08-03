@@ -13,6 +13,8 @@ const LoginForm = lazy(() => import("@/components/LoginForm"));
 const ForgotPasswordForm = lazy(() => import("@/components/ForgotPasswordForm"));
 const ResetPasswordForm = lazy(() => import("@/components/ResetPasswordForm"));
 const ChatPage = lazy(() => import("@/components/chat/ChatPage"));
+const PaymentSuccess = lazy(() => import("@/components/payment/PaymentSuccess"));
+const PaymentCancel = lazy(() => import("@/components/payment/PaymentCancel"));
 
 function PageFallback() {
     return (
@@ -132,6 +134,11 @@ function AppRoutes() {
                         <Route path="/reset" element={<ResetPasswordForm />} />
                         <Route path="/admin/dashboard" element={<ProtectedAdminRoute />} />
                         <Route path="/chat" element={<ProtectedChatRoute />} />
+                        {/* /payment/* per spec; /billing/* matches the URLs the backend checkout currently builds */}
+                        <Route path="/payment/success" element={<PaymentSuccess />} />
+                        <Route path="/payment/cancel" element={<PaymentCancel />} />
+                        <Route path="/billing/success" element={<PaymentSuccess />} />
+                        <Route path="/billing/cancel" element={<PaymentCancel />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
                 </Suspense>

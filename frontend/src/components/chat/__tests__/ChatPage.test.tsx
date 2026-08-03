@@ -220,7 +220,7 @@ describe("ChatPage", () => {
         expect(screen.getByText(/«Исследователь»/)).toBeInTheDocument();
         expect(screen.getByText("$15/мес")).toBeInTheDocument();
         for (const button of screen.getAllByRole("button", {name: "Оформить"})) {
-            expect(button).toBeDisabled();
+            expect(button).toBeEnabled();
         }
         expect(screen.queryByLabelText("Сообщение ассистенту")).not.toBeInTheDocument();
     });
