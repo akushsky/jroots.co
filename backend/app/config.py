@@ -41,6 +41,22 @@ class Settings(BaseSettings):
     mcp_tool_call_cap: int = 15
     mcp_rate_limit_per_db_seconds: float = 1.0
 
+    # Payments (M4): Polar / NOWPayments / YuKassa.
+    public_base_url: str = "http://localhost:8000"
+    polar_api_key: str = ""
+    polar_webhook_secret: str = ""
+    polar_sandbox: bool = True
+    polar_product_id_delo: str = ""
+    polar_product_id_researcher: str = ""
+    polar_product_id_scans_pack: str = ""
+    polar_product_id_ppr: str = ""
+    nowpayments_api_key: str = ""
+    nowpayments_ipn_secret: str = ""
+    yukassa_shop_id: str = ""
+    yukassa_secret_key: str = ""
+    yukassa_currency: str = "RUB"
+    yukassa_usd_rate: float = 90.0
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

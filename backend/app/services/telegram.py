@@ -10,6 +10,21 @@ from app.models import Image
 logger = logging.getLogger("jroots")
 
 
+async def send_admin_alert(text: str) -> None:
+    """Best-effort alert to the admin Telegram chat; never raises."""
+    settings = get_settings()
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
+                json={"chat_id": settings.telegram_chat_id, "text": text},
+            )
+    except Exception:
+        logger.exception("Failed to send admin Telegram alert")
+
+
 async def send_photo_to_chat(
     image: Image,
     caption: str,
