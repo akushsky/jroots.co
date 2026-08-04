@@ -2,11 +2,23 @@ import {useRef, useState} from "react";
 import {Link} from "react-router-dom";
 import {AxiosError} from "axios";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {userRegister} from "@/api/api";
 import {StatusMessage} from "@/components/shared/StatusMessage";
+
+/** Best-effort visitor fingerprint; registration never blocks on it. */
+async function loadFingerprint(): Promise<string> {
+    try {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        return result.visitorId;
+    } catch {
+        return "";
+    }
+}
 
 export default function RegisterForm() {
     const [email, setEmail] = useState("");
@@ -45,7 +57,8 @@ export default function RegisterForm() {
                 ? telegramUsername.slice(1)
                 : telegramUsername;
 
-            const data = await userRegister(username, email, password, cleanTelegram, captchaToken);
+            const fingerprint = await loadFingerprint();
+            const data = await userRegister(username, email, password, cleanTelegram, captchaToken, fingerprint);
             setSuccessMessage(data.message || "Регистрация прошла успешно.");
         } catch (err) {
             const detail = err instanceof AxiosError ? err.response?.data?.detail : undefined;

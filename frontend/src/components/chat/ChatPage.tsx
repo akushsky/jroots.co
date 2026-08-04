@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {Link} from "react-router-dom";
+import {Link, useSearchParams} from "react-router-dom";
 import {Coins, PanelLeft, ScanLine, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
@@ -13,11 +13,13 @@ import {
     ScanUploadError,
 } from "@/api/chat";
 import type {CappedReason, ChatSessionSummary, Credits, DoneEvent, UsageEvent} from "@/api/chat";
+import {axiosErrorDetail, ChatApiError} from "@/api/errors";
 import {SessionSidebar} from "./SessionSidebar";
 import {ChatMessageBubble} from "./ChatMessageBubble";
 import {ChatInput} from "./ChatInput";
 import {Paywall} from "./Paywall";
 import {PaywallContext} from "./PaywallContext";
+import {chatErrorForCode, GENERIC_SEND_ERROR, GENERIC_SESSION_ERROR} from "./errorMessages";
 import {extractSteps} from "./steps";
 import type {ScanAttachment} from "./scans";
 import type {DisplayMessage} from "./types";
@@ -45,6 +47,9 @@ export default function ChatPage() {
     const [paywallOpen, setPaywallOpen] = useState(false);
     const openPaywall = useCallback(() => setPaywallOpen(true), []);
     const [attachments, setAttachments] = useState<ScanAttachment[]>([]);
+    const [searchParams] = useSearchParams();
+    // Landing hand-off: /chat?q=... prefills the first message.
+    const initialQuery = searchParams.get("q") ?? undefined;
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -205,10 +210,17 @@ export default function ChatPage() {
                     ]);
                     setActiveId(session.id);
                 }
-            } catch {
+            } catch (error) {
+                const mapped = chatErrorForCode(axiosErrorDetail(error).code);
                 setMessages((prev) => [
                     ...prev,
-                    {id: nextTempId(), role: "assistant", content: "Не удалось создать поиск. Попробуйте ещё раз.", error: true},
+                    {
+                        id: nextTempId(),
+                        role: "assistant",
+                        content: mapped?.text ?? GENERIC_SESSION_ERROR,
+                        error: true,
+                        paywallAction: mapped?.paywallAction,
+                    },
                 ]);
                 return;
             }
@@ -307,9 +319,17 @@ export default function ChatPage() {
                 if (!result.finished) {
                     patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
                 }
-            } catch {
+            } catch (error) {
                 if (!controller.signal.aborted) {
-                    patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
+                    const mapped =
+                        error instanceof ChatApiError ? chatErrorForCode(error.code) : null;
+                    patchAssistant(assistantId, {
+                        pending: false,
+                        live: false,
+                        content: mapped?.text ?? (error instanceof ChatApiError ? GENERIC_SEND_ERROR : CONNECTION_LOST),
+                        error: true,
+                        paywallAction: mapped?.paywallAction,
+                    });
                 }
             } finally {
                 setStreaming(false);
@@ -431,6 +451,7 @@ export default function ChatPage() {
                             onAttachFile={attachScan}
                             onRemoveAttachment={removeAttachment}
                             onSend={send}
+                            initialValue={initialQuery}
                         />
                     )}
                     <p className="text-xs text-muted-foreground mt-2 text-center">

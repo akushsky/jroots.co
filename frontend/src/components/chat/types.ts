@@ -20,4 +20,6 @@ export interface DisplayMessage {
     scans?: MessageScan[];
     capped?: CappedReason | null;
     error?: boolean;
+    /** Error message carries a tariff CTA (opens the paywall modal). */
+    paywallAction?: boolean;
 }

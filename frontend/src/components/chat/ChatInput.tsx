@@ -11,6 +11,8 @@ interface ChatInputProps {
     onAttachFile: (file: File) => void;
     onRemoveAttachment: (localId: string) => void;
     onSend: (content: string) => void;
+    /** Prefill the input (e.g. from /chat?q=... landing hand-off). Applied on mount. */
+    initialValue?: string;
 }
 
 function AttachmentChip({attachment, onRemove}: { attachment: ScanAttachment; onRemove: () => void }) {
@@ -79,8 +81,8 @@ function AttachmentChip({attachment, onRemove}: { attachment: ScanAttachment; on
     );
 }
 
-export function ChatInput({disabled, attachments, onAttachFile, onRemoveAttachment, onSend}: ChatInputProps) {
-    const [value, setValue] = useState("");
+export function ChatInput({disabled, attachments, onAttachFile, onRemoveAttachment, onSend, initialValue}: ChatInputProps) {
+    const [value, setValue] = useState(initialValue ?? "");
     const [attachError, setAttachError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 

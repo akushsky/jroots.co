@@ -130,6 +130,19 @@ function TypingIndicator() {
     );
 }
 
+function PaywallCTA() {
+    const openPaywall = useOpenPaywall();
+    return (
+        <button
+            type="button"
+            onClick={openPaywall}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium bg-accent text-accent-foreground rounded-full px-3 py-1.5 hover:bg-accent/90 transition-colors cursor-pointer"
+        >
+            Оформить тариф
+        </button>
+    );
+}
+
 export function ChatMessageBubble({message}: { message: DisplayMessage }) {
     const isUser = message.role === "user";
 
@@ -181,6 +194,9 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
                             <AlertTriangle className="w-3 h-3" />
                             Ответ сокращён — лимит сложной задачи
                         </div>
+                    )}
+                    {message.error && message.paywallAction && (
+                        <PaywallCTA />
                     )}
                 </div>
             </div>

@@ -5,6 +5,7 @@ import {MemoryRouter} from "react-router-dom";
 import ChatPage from "../ChatPage";
 import {createSession, getCredits, getSession, listSessions, streamMessage, uploadScan, ScanUploadError} from "@/api/chat";
 import type {StreamCallbacks, ScanUploadResult} from "@/api/chat";
+import {ChatApiError} from "@/api/errors";
 
 vi.mock("@/api/chat", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/api/chat")>();
@@ -240,6 +241,101 @@ describe("ChatPage", () => {
         await waitFor(() =>
             expect(screen.getByLabelText("Сообщение ассистенту")).not.toBeDisabled(),
         );
+    });
+
+    it("prefills the input from the ?q query param (landing hand-off)", async () => {
+        render(
+            <MemoryRouter initialEntries={["/chat?q=Моисей из Невеля"]}>
+                <ChatPage />
+            </MemoryRouter>,
+        );
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        expect(input).toHaveValue("Моисей из Невеля");
+    });
+
+    it("shows «бесплатные сессии закончились» with a tariff CTA on free_sessions_limit", async () => {
+        const user = userEvent.setup();
+        vi.mocked(createSession).mockRejectedValue({
+            response: {data: {detail: {code: "free_sessions_limit", message: "no more"}}},
+        });
+        vi.mocked(listSessions).mockResolvedValue([]);
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(
+            await screen.findByText(
+                "Бесплатные сессии на сегодня закончились. Продолжите завтра или оформите тариф.",
+            ),
+        ).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", {name: "Оформить тариф"}));
+        expect(await screen.findByRole("dialog", {name: "Тарифы"})).toBeInTheDocument();
+    });
+
+    it("shows «лимит исчерпан» with a tariff CTA on daily_budget from the stream", async () => {
+        const user = userEvent.setup();
+        vi.mocked(streamMessage).mockRejectedValue(new ChatApiError("daily_budget", "limit"));
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(
+            await screen.findByText("Бесплатный лимит на сегодня исчерпан."),
+        ).toBeInTheDocument();
+        expect(screen.getByRole("button", {name: "Оформить тариф"})).toBeInTheDocument();
+    });
+
+    it("shows «слишком много запросов» without a tariff CTA on rate_limited", async () => {
+        const user = userEvent.setup();
+        vi.mocked(streamMessage).mockRejectedValue(new ChatApiError("rate_limited", "slow down"));
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(
+            await screen.findByText("Слишком много запросов. Подождите немного и попробуйте ещё раз."),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Оформить тариф"})).not.toBeInTheDocument();
+    });
+
+    it("falls back to the generic send error for an unknown backend code", async () => {
+        const user = userEvent.setup();
+        vi.mocked(streamMessage).mockRejectedValue(new ChatApiError("weird_code", "???"));
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(
+            await screen.findByText("Не удалось отправить сообщение. Попробуйте ещё раз."),
+        ).toBeInTheDocument();
+    });
+
+    it("tolerates a legacy string detail on session creation", async () => {
+        const user = userEvent.setup();
+        vi.mocked(createSession).mockRejectedValue({
+            response: {data: {detail: "старая строковая ошибка"}},
+        });
+        vi.mocked(listSessions).mockResolvedValue([]);
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(
+            await screen.findByText("Не удалось создать поиск. Попробуйте ещё раз."),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Оформить тариф"})).not.toBeInTheDocument();
     });
 
     it("uploads a scan: chip goes from «Обработка» to «Готово»", async () => {

@@ -60,13 +60,14 @@ describe("userRegister", () => {
         const mockData = {message: "ok"};
         (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({data: mockData});
 
-        const result = await userRegister("user", "u@test.com", "pass", "tg", "cap");
+        const result = await userRegister("user", "u@test.com", "pass", "tg", "cap", "fp-1");
         expect(apiClient.post).toHaveBeenCalledWith("/register", {
             username: "user",
             email: "u@test.com",
             password: "pass",
             telegram_username: "tg",
             captcha_token: "cap",
+            fingerprint: "fp-1",
         });
         expect(result).toEqual(mockData);
     });

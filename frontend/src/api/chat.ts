@@ -1,5 +1,6 @@
 import axios from "axios";
 import {apiClient} from "@/api/api";
+import {ChatApiError, parseErrorDetail, type ErrorDetail} from "@/api/errors";
 import {SSEParser} from "@/lib/sse";
 
 export interface ChatSessionSummary {
@@ -146,7 +147,16 @@ export async function streamMessage(
         throw new Error("Требуется повторный вход");
     }
     if (!response.ok || !response.body) {
-        throw new Error(`Сервер вернул ошибку ${response.status}`);
+        let detail: ErrorDetail = {code: null, message: null};
+        try {
+            detail = parseErrorDetail((await response.json())?.detail);
+        } catch {
+            // body wasn't JSON — keep the null detail
+        }
+        throw new ChatApiError(
+            detail.code,
+            detail.message ?? `Сервер вернул ошибку ${response.status}`,
+        );
     }
 
     const reader = response.body.getReader();

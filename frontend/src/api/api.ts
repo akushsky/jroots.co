@@ -66,6 +66,7 @@ export const userRegister = async (
     password: string,
     telegramUsername: string,
     captchaToken: string,
+    fingerprint: string,
 ) =>
     (await apiClient.post("/register", {
         username,
@@ -73,6 +74,7 @@ export const userRegister = async (
         password,
         telegram_username: telegramUsername,
         captcha_token: captchaToken,
+        fingerprint,
     })).data;
 
 export const userLogin = async (email: string, password: string) =>
