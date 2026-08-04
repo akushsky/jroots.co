@@ -8,13 +8,21 @@ Responsibilities:
 - the is_free_user helper (payments/subscription aware).
 """
 
+import asyncio
 import logging
-from collections.abc import AsyncGenerator, Mapping
+import random
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AsyncOpenAI,
+    InternalServerError,
+    RateLimitError,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +52,19 @@ FREE_SESSIONS_LIMIT_MESSAGE = (
 # Rough heuristic when the provider does not return usage: ~4 chars/token.
 _CHARS_PER_TOKEN = 4
 
+# Transient provider failures worth retrying when ESTABLISHING a stream
+# (before the first chunk — retrying mid-stream would duplicate text).
+# BadRequestError / AuthenticationError are deliberately absent: those are
+# deterministic and a retry would just fail again.
+_RETRYABLE_STREAM_ERRORS = (
+    APIConnectionError,
+    APITimeoutError,
+    RateLimitError,
+    InternalServerError,
+)
+_STREAM_ESTABLISH_ATTEMPTS = 3
+_RETRY_BACKOFF_BASE_SECONDS = 1.0
+
 _client: AsyncOpenAI | None = None
 
 
@@ -57,6 +78,46 @@ def get_llm_client() -> AsyncOpenAI:
             base_url=settings.moonshot_base_url,
         )
     return _client
+
+
+async def _retry_backoff(attempt: int) -> None:
+    """Exponential backoff with jitter: 1s, 2s, 4s, ... (+ up to 0.5s)."""
+    delay = _RETRY_BACKOFF_BASE_SECONDS * (2**attempt) + random.uniform(0, 0.5)
+    await asyncio.sleep(delay)
+
+
+async def _establish_stream(
+    client: AsyncOpenAI, kwargs: dict[str, Any]
+) -> tuple[AsyncIterator, Any]:
+    """Create the completion stream and pull its first chunk, retrying
+    transient provider failures (connection/timeout/429/5xx) up to
+    _STREAM_ESTABLISH_ATTEMPTS times with exponential backoff.
+
+    Pulling the first chunk is part of establishment: with stream=True the
+    HTTP response (and its error status) only materializes when iteration
+    starts. Once this returns, errors must NOT be retried — the stream may
+    already have produced text, and a retry would duplicate it.
+    """
+    for attempt in range(_STREAM_ESTABLISH_ATTEMPTS):
+        try:
+            stream = await client.chat.completions.create(**kwargs)
+            iterator = stream.__aiter__()
+            try:
+                first_chunk = await iterator.__anext__()
+            except StopAsyncIteration:
+                first_chunk = None
+            return iterator, first_chunk
+        except _RETRYABLE_STREAM_ERRORS as exc:
+            if attempt == _STREAM_ESTABLISH_ATTEMPTS - 1:
+                raise
+            logger.warning(
+                "LLM stream establishment failed (attempt %d/%d, %s) — retrying",
+                attempt + 1,
+                _STREAM_ESTABLISH_ATTEMPTS,
+                type(exc).__name__,
+            )
+            await _retry_backoff(attempt)
+    raise AssertionError("unreachable")  # the loop always returns or raises
 
 
 def select_model(session_context: Mapping[str, Any] | None = None) -> str:
@@ -112,12 +173,19 @@ async def stream_completion(
     if tools is not None:
         kwargs["tools"] = tools
 
-    stream = await client.chat.completions.create(**kwargs)
+    stream_iterator, first_chunk = await _establish_stream(client, kwargs)
 
     collected: list[str] = []
     tool_call_slots: dict[int, dict[str, str]] = {}
     usage: Any = None
-    async for chunk in stream:
+
+    async def _all_chunks() -> AsyncGenerator[Any, None]:
+        if first_chunk is not None:
+            yield first_chunk
+        async for chunk in stream_iterator:
+            yield chunk
+
+    async for chunk in _all_chunks():
         if getattr(chunk, "usage", None):
             usage = chunk.usage
         choices = getattr(chunk, "choices", None) or []
