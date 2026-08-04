@@ -30,7 +30,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -51,6 +51,10 @@ _ROLE_ASSISTANT = "assistant"
 
 LLM_ERROR_MESSAGE = "Ошибка модели, попробуйте ещё раз."
 
+# Terminal event for an unexpected agent-cycle crash (DB failures and other
+# non-LLM, non-MCP exceptions) — deliberately matches no specific subsystem.
+GENERIC_ERROR_MESSAGE = "Ошибка, попробуйте ещё раз."
+
 
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
@@ -67,6 +71,12 @@ class MessageIn(BaseModel):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _error_detail(code: str, message: str) -> dict:
+    """Structured 429 body for the frontend: it renders by `code`, the
+    human-readable text rides along in `message`."""
+    return {"code": code, "message": message}
 
 
 async def _searches_left(db: AsyncSession, user_id: int) -> int:
@@ -154,7 +164,10 @@ async def create_session(
     if is_free:
         if await llm_router.is_daily_budget_exceeded(db):
             raise HTTPException(
-                status_code=429, detail=llm_router.DAILY_BUDGET_EXCEEDED_MESSAGE
+                status_code=429,
+                detail=_error_detail(
+                    "daily_budget", llm_router.DAILY_BUDGET_EXCEEDED_MESSAGE
+                ),
             )
         day_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
         recent = await db.execute(
@@ -166,7 +179,10 @@ async def create_session(
         )
         if recent.scalar_one() >= settings.free_sessions_per_day:
             raise HTTPException(
-                status_code=429, detail=llm_router.FREE_SESSIONS_LIMIT_MESSAGE
+                status_code=429,
+                detail=_error_detail(
+                    "free_sessions_limit", llm_router.FREE_SESSIONS_LIMIT_MESSAGE
+                ),
             )
 
     session = ChatSession(
@@ -393,12 +409,41 @@ async def _stream_reply(
     )
 
 
+async def _mark_session_error(db: AsyncSession, session: ChatSession) -> None:
+    """Best-effort error flag after a crashed cycle. The session may hold a
+    poisoned transaction — rollback first, then UPDATE by id. The ORM object
+    itself is deliberately not touched: after a rollback it is expired, and
+    even reading an attribute would trigger IO (MissingGreenlet inside the
+    ASGI strand)."""
+    session_id = session.id  # read BEFORE the rollback expires the object
+    try:
+        await db.rollback()
+        await db.execute(
+            update(ChatSession)
+            .where(ChatSession.id == session_id)
+            .values(status="error")
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("Failed to persist error status for session %d", session_id)
+
+
 async def _event_stream(
+    db: AsyncSession,
+    session: ChatSession,
     events: AsyncGenerator[tuple[str, dict[str, Any]], None],
 ) -> AsyncGenerator[str, None]:
-    """Serialize agent-cycle (event, data) pairs into SSE frames."""
-    async for event, data in events:
-        yield _sse(event, data)
+    """Serialize agent-cycle (event, data) pairs into SSE frames.
+
+    The stream must never die silently: any exception escaping the cycle
+    generator is converted into a terminal error event."""
+    try:
+        async for event, data in events:
+            yield _sse(event, data)
+    except Exception:
+        logger.exception("Agent cycle crashed for session %d", session.id)
+        await _mark_session_error(db, session)
+        yield _sse("error", {"message": GENERIC_ERROR_MESSAGE})
 
 
 async def _agent_json_reply(
@@ -414,19 +459,26 @@ async def _agent_json_reply(
     error_message: str | None = None
     capped = False
     paywall = False
-    async for event, data in run_agent_cycle(db, session, content, scan_ids=scan_ids):
-        if event == "token":
-            tokens.append(data["text"])
-        elif event == "usage":
-            usage = data
-        elif event == "done":
-            done = data
-        elif event == "capped":
-            capped = True
-        elif event == "paywall":
-            paywall = True
-        elif event == "error":
-            error_message = data["message"]
+    try:
+        async for event, data in run_agent_cycle(
+            db, session, content, scan_ids=scan_ids
+        ):
+            if event == "token":
+                tokens.append(data["text"])
+            elif event == "usage":
+                usage = data
+            elif event == "done":
+                done = data
+            elif event == "capped":
+                capped = True
+            elif event == "paywall":
+                paywall = True
+            elif event == "error":
+                error_message = data["message"]
+    except Exception:
+        logger.exception("Agent cycle crashed for session %d", session.id)
+        await _mark_session_error(db, session)
+        raise HTTPException(status_code=502, detail=GENERIC_ERROR_MESSAGE)
 
     if error_message is not None:
         raise HTTPException(status_code=502, detail=error_message)
@@ -472,7 +524,9 @@ async def post_message(
         if wants_sse:
             return StreamingResponse(
                 _event_stream(
-                    run_agent_cycle(db, session, body.content, scan_ids=scan_ids)
+                    db,
+                    session,
+                    run_agent_cycle(db, session, body.content, scan_ids=scan_ids),
                 ),
                 media_type="text/event-stream",
             )
@@ -492,7 +546,10 @@ async def post_message(
     if session.is_free and await llm_router.is_daily_budget_exceeded(db):
         if not wants_sse:
             raise HTTPException(
-                status_code=429, detail=llm_router.DAILY_BUDGET_EXCEEDED_MESSAGE
+                status_code=429,
+                detail=_error_detail(
+                    "daily_budget", llm_router.DAILY_BUDGET_EXCEEDED_MESSAGE
+                ),
             )
 
         # SSE: report the cap in-band so the client renders a graceful stop.

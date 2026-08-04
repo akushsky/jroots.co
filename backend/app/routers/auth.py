@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,10 @@ from app.services.email import send_email
 logger = logging.getLogger("jroots")
 
 router = APIRouter(prefix="/api", tags=["auth"])
+
+# Anti-abuse: at this many accounts per device fingerprint the signup bonus
+# is no longer granted (accounts themselves are still allowed).
+FINGERPRINT_BONUS_ACCOUNT_LIMIT = 3
 
 
 @router.post("/register")
@@ -53,6 +57,7 @@ async def register_user(
         email=data.email,
         hashed_password=hashed_pw,
         telegram_username=data.telegram_username,
+        fingerprint_hash=data.fingerprint,
         is_verified=False,
     )
 
@@ -97,16 +102,39 @@ async def verify_user(token: str, db: AsyncSession = Depends(get_db)):
 
     logger.info("User %s verified their email %s", user.username, user.email)
 
-    try:
-        bonus = await grant_signup_bonus(db, user.id)
-        await db.commit()
-        if bonus["granted"]:
-            logger.info("Signup bonus granted to user %s", user.email)
-    except Exception:
-        await db.rollback()
-        logger.exception("Failed to grant signup bonus to user %s", user.email)
+    # Anti-abuse: three or more accounts sharing one device fingerprint get
+    # no free pool. The account itself is created and verified normally.
+    free_pool_granted = True
+    if user.fingerprint_hash:
+        same_fp = await db.execute(
+            select(func.count(User.id)).where(
+                User.fingerprint_hash == user.fingerprint_hash
+            )
+        )
+        if same_fp.scalar_one() >= FINGERPRINT_BONUS_ACCOUNT_LIMIT:
+            free_pool_granted = False
+            logger.warning(
+                "Anti-abuse flag: signup bonus withheld for user %s — "
+                "fingerprint already has >=%d accounts",
+                user.email,
+                FINGERPRINT_BONUS_ACCOUNT_LIMIT,
+            )
 
-    return {"message": "User verified successfully"}
+    if free_pool_granted:
+        try:
+            bonus = await grant_signup_bonus(db, user.id)
+            await db.commit()
+            if bonus["granted"]:
+                logger.info("Signup bonus granted to user %s", user.email)
+        except Exception:
+            await db.rollback()
+            free_pool_granted = False
+            logger.exception("Failed to grant signup bonus to user %s", user.email)
+
+    return {
+        "message": "User verified successfully",
+        "free_pool_granted": free_pool_granted,
+    }
 
 
 @router.post("/login")

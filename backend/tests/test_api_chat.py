@@ -115,7 +115,9 @@ async def test_free_session_rate_limit(client, db_session):
 
     response = await client.post("/api/chat/sessions", headers=auth_header(user))
     assert response.status_code == 429
-    assert "сессий" in response.json()["detail"].lower()
+    detail = response.json()["detail"]
+    assert detail["code"] == "free_sessions_limit"
+    assert "сессий" in detail["message"].lower()
 
 
 async def test_daily_budget_blocks_session_create(client, db_session):
@@ -125,7 +127,25 @@ async def test_daily_budget_blocks_session_create(client, db_session):
 
     response = await client.post("/api/chat/sessions", headers=auth_header(user))
     assert response.status_code == 429
-    assert "лимит" in response.json()["detail"].lower()
+    detail = response.json()["detail"]
+    assert detail["code"] == "daily_budget"
+    assert "лимит" in detail["message"].lower()
+
+
+async def test_daily_budget_blocks_message_json_with_code(client, db_session, fake_llm):
+    fake_llm()
+    user = await create_user(db_session, email="chat-budget-json@example.com")
+    session = await _create_session(client, user)
+    db_session.add(DailyBudget(day=date.today(), free_spend_usd=Decimal("999.0")))
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/chat/sessions/{session['id']}/messages",
+        json={"content": "привет"},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 429
+    assert response.json()["detail"]["code"] == "daily_budget"
 
 
 async def test_message_json_happy_path(client, db_session, fake_llm):

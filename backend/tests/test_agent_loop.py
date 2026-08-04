@@ -15,6 +15,7 @@ from app.models import (
     Search,
     ToolCallLog,
 )
+from app.services import agent_loop as agent_loop_module
 from app.services import llm_router
 from app.services import mcp_client as mcp_client_module
 from app.services.agent_loop import (
@@ -925,3 +926,61 @@ async def test_tool_calls_endpoint_is_owner_only(
     )
     assert response.status_code == 200
     assert len(response.json()) == 1
+
+
+async def test_agent_cycle_crash_emits_error_event_not_silent_eof(
+    client, db_session, agent_mode, fake_llm, fake_mcp, monkeypatch
+):
+    """Any exception escaping the cycle (e.g. a poisoned DB transaction)
+    must surface as a terminal error event, not a silently closed stream."""
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("PendingRollbackError: transaction was poisoned")
+
+    monkeypatch.setattr(agent_loop_module.credits, "get_balance", boom)
+    transport = FakeTransport()
+    fake_mcp(transport)
+    llm_client = fake_llm([])
+    user = await create_user(db_session, email="agent-crash@example.com")
+    user_id = user.id  # the crash path rolls back the shared session,
+    # expiring every ORM object attached to it
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    assert frames[-1] == ("error", {"message": "Ошибка, попробуйте ещё раз."})
+
+    # The LLM was never reached, the credit is untouched, the session is
+    # flagged error — and the user message still survived.
+    assert llm_client.chat.completions.calls == []
+    credit = (
+        await db_session.execute(select(Credit).where(Credit.user_id == user_id))
+    ).scalar_one()
+    assert credit.searches_left == 5
+    session_row = await _session_row(db_session, session["id"])
+    assert session_row.status == "error"
+
+
+async def test_agent_cycle_crash_json_mode_returns_502(
+    client, db_session, agent_mode, fake_llm, fake_mcp, monkeypatch
+):
+    async def boom(*args, **kwargs):
+        raise RuntimeError("PendingRollbackError: transaction was poisoned")
+
+    monkeypatch.setattr(agent_loop_module.credits, "get_balance", boom)
+    fake_mcp(FakeTransport())
+    fake_llm([])
+    user = await create_user(db_session, email="agent-crashjson@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    response = await client.post(
+        f"/api/chat/sessions/{session['id']}/messages",
+        json={"content": "ищу"},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Ошибка, попробуйте ещё раз."
+
+    session_row = await _session_row(db_session, session["id"])
+    assert session_row.status == "error"

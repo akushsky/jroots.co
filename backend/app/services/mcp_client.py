@@ -260,6 +260,10 @@ class McpArchiveClient:
         # Optional DB handle for the tool_call_logs journal; None in unit
         # tests that exercise the client without a database.
         self._db = db
+        # Parallel tool calls (asyncio.gather) share one AsyncSession — the
+        # journal must serialize its writes or concurrent commits corrupt
+        # each other (UniqueViolationError → poisoned transaction).
+        self._journal_lock = asyncio.Lock()
 
     async def open(self) -> None:
         """Connect and fetch the whitelisted tool schemas (OpenAI format)."""
@@ -390,22 +394,45 @@ class McpArchiveClient:
     ) -> None:
         """Persist one tool_call_logs row. Commits on its own so the journal
         survives a technical failure of the rest of the cycle (the cycle has
-        nothing else pending at tool-call time). No-op without a DB handle."""
+        nothing else pending at tool-call time). No-op without a DB handle.
+
+        The journal is observability, not the critical path: a write failure
+        is logged and swallowed (with a rollback to detox the session) — it
+        must never kill the agent cycle.
+        """
         if self._db is None:
             return
-        self._db.add(
-            ToolCallLog(
-                session_id=self.session_id,
-                tool=tool,
-                database=database,
-                args_json=arguments if isinstance(arguments, dict) else None,
-                results_count=results_count,
-                latency_ms=latency_ms,
-                status=status,
-                error=error,
+        try:
+            async with self._journal_lock:
+                self._db.add(
+                    ToolCallLog(
+                        session_id=self.session_id,
+                        tool=tool,
+                        database=database,
+                        args_json=arguments if isinstance(arguments, dict) else None,
+                        results_count=results_count,
+                        latency_ms=latency_ms,
+                        status=status,
+                        error=error,
+                    )
+                )
+                await self._db.commit()
+        except Exception:
+            logger.warning(
+                "Failed to journal tool call (session=%d tool=%s status=%s)",
+                self.session_id,
+                tool,
+                status,
+                exc_info=True,
             )
-        )
-        await self._db.commit()
+            try:
+                await self._db.rollback()
+            except Exception:
+                logger.warning(
+                    "Rollback after journal failure also failed (session=%d)",
+                    self.session_id,
+                    exc_info=True,
+                )
 
     async def _call_with_retry(
         self, name: str, arguments: dict[str, Any]

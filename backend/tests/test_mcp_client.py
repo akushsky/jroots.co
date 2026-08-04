@@ -199,6 +199,58 @@ async def test_search_counters_and_call_log():
     assert third.result_count == 0
 
 
+class FlakyDb:
+    """AsyncSession double whose commit fails a given number of times."""
+
+    def __init__(self, fail_commits=1):
+        self.added = []
+        self.commits = 0
+        self.rollbacks = 0
+        self._fail = fail_commits
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+        if self.commits <= self._fail:
+            raise RuntimeError("UniqueViolationError: duplicate key value")
+
+    async def rollback(self):
+        self.rollbacks += 1
+
+
+async def test_journal_failure_does_not_kill_the_call():
+    db = FlakyDb(fail_commits=1)
+    transport = FakeTransport()
+    client = McpArchiveClient(
+        transport, session_id=1, user_id=2, rate_limit_interval=0, db=db
+    )
+    await client.open()
+
+    # The journal write blows up — the tool call itself still succeeds and
+    # the poisoned transaction is rolled back.
+    assert await client.call("list_databases", {}) == "ok"
+    assert db.rollbacks == 1
+
+    # The client keeps working afterwards.
+    assert await client.call("list_databases", {}) == "ok"
+    assert client.calls_used == 2
+
+
+async def test_journal_cap_blocked_failure_does_not_kill_the_call():
+    db = FlakyDb(fail_commits=10)  # every journal write fails
+    transport = FakeTransport()
+    client = McpArchiveClient(
+        transport, session_id=1, user_id=2, max_calls=1, rate_limit_interval=0, db=db
+    )
+    await client.open()
+
+    assert await client.call("list_databases", {}) == "ok"
+    assert await client.call("search", {"database": "gabo"}) == TOOL_CALL_LIMIT_MESSAGE
+    assert db.rollbacks == 2
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

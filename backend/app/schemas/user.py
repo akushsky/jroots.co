@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -7,6 +7,8 @@ class RegisterRequest(BaseModel):
     password: str
     telegram_username: str | None = None
     captcha_token: str
+    # Client-side fingerprintJS hash (anti-abuse), optional.
+    fingerprint: str | None = Field(default=None, max_length=128)
 
     @field_validator("username")
     @classmethod
@@ -16,6 +18,13 @@ class RegisterRequest(BaseModel):
     @field_validator("telegram_username")
     @classmethod
     def strip_telegram(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.strip() or None
+        return v
+
+    @field_validator("fingerprint")
+    @classmethod
+    def strip_fingerprint(cls, v: str | None) -> str | None:
         if v is not None:
             return v.strip() or None
         return v
