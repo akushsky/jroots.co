@@ -10,7 +10,12 @@ and masks cipher-looking strings wherever they hide.
 
 from typing import Any, Literal
 
-from app.services.sensitive_patterns import CIPHER_DETECT_RE, URL_DETECT_RE
+from app.services.sensitive_patterns import (
+    CIPHER_DETECT_RE,
+    LONG_CIPHER_SEQ_RE,
+    SLASH_CIPHER_RE,
+    URL_DETECT_RE,
+)
 
 # Top-level fields allowed into a teaser (safe-by-default whitelist).
 KEEP_FIELDS = frozenset(
@@ -94,6 +99,8 @@ _MIN_UNMASKED_LEN = 5
 # Defense-in-depth value detection (shared with the stream redactor).
 _URL_RE = URL_DETECT_RE
 _CIPHER_RE = CIPHER_DETECT_RE
+_LONG_CIPHER_RE = LONG_CIPHER_SEQ_RE
+_SLASH_CIPHER_RE = SLASH_CIPHER_RE
 
 
 def _is_url_like(value: str) -> bool:
@@ -101,7 +108,9 @@ def _is_url_like(value: str) -> bool:
 
 
 def _is_cipher_like(value: str) -> bool:
-    return bool(_CIPHER_RE.search(value))
+    if _CIPHER_RE.search(value):
+        return True
+    return bool(_LONG_CIPHER_RE.search(value) or _SLASH_CIPHER_RE.search(value))
 
 
 def _mask(value: Any) -> Any:

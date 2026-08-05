@@ -20,9 +20,13 @@ each completion round.
 """
 
 from app.services.sensitive_patterns import (
+    ARCHIVE_FOND_SLASH_RE,
+    CASE_LIST_RE,
     CIPHER_SEQ_RE,
     CIPHER_TAIL_RE,
     IMAGE_PLACEHOLDER,
+    LONG_CIPHER_SEQ_RE,
+    LONG_CIPHER_TAIL_RE,
     MD_IMAGE_FULL_RE,
     MD_LINK_DEST_TAIL_RE,
     MD_LINK_FULL_RE,
@@ -45,6 +49,9 @@ def _redact(text: str) -> str:
     text = MD_LINK_FULL_RE.sub(lambda m: f"{m.group(1)} 🔒", text)
     text = URL_FULL_RE.sub(URL_PLACEHOLDER, text)
     text = SLASH_CIPHER_RE.sub("", text)
+    text = ARCHIVE_FOND_SLASH_RE.sub(lambda m: f"{m.group(1)} 🔒", text)
+    text = CASE_LIST_RE.sub(" 🔒 ", text)
+    text = LONG_CIPHER_SEQ_RE.sub(" 🔒 ", text)
     return CIPHER_SEQ_RE.sub("", text)
 
 
@@ -78,6 +85,7 @@ class StreamRedactor:
         for pattern in (
             PARTIAL_TOKEN_TAIL_RE,
             CIPHER_TAIL_RE,
+            LONG_CIPHER_TAIL_RE,
             MD_LINK_OPEN_TAIL_RE,
             MD_LINK_DEST_TAIL_RE,
             TRAILING_BANG_RE,

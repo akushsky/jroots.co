@@ -95,3 +95,44 @@ CIPHER_TAIL_RE = re.compile(
 # Trailing partial token (no whitespace yet) — URLs are single tokens, so a
 # split URL always ends the buffer as a partial token.
 PARTIAL_TOKEN_TAIL_RE = re.compile(r"\S+$")
+
+# Trailing fragment that may grow into a long-form cipher or case list once
+# more deltas arrive: an archive keyword followed only by cipher-ish
+# characters (letters, digits, №, separators) to the end of the buffer.
+# «запись в журнале» contains a space-separated non-digit word right after
+# the keyword, but digits never start — the digit requirement keeps it from
+# holding prose indefinitely.
+LONG_CIPHER_TAIL_RE = re.compile(
+    r"(?:фонд|опись|дело|дела|деле|запись|ед\.?\s*хранения)"
+    r"[\w\s№.,;()*/–—-]{0,60}\d[\w\s№.,;()*/–—-]*$",
+    re.IGNORECASE,
+)
+
+# Long-form cipher sequences: «фонд Р-585 опись 1», «дело 415, запись № 12»,
+# «запись 1893/196». The abbreviated CIPHER_SEQ_RE only knows «ф./оп./д.» —
+# models also write the long form. Keyword + optional №/series + digits;
+# digit required right after the keyword, so «опись магазина» and «запись в
+# журнале» stay untouched.
+LONG_CIPHER_SEQ_RE = re.compile(
+    r"(?:(?:фонд|опись|дело|деле|запись|ед\.?\s*хранения)\s*№?\s*"
+    r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\d+[A-Za-zА-Яа-я]?"
+    r"(?:[-–—/]\d+[A-Za-zА-Яа-я]?)?[\s,;]*)+",
+    re.IGNORECASE,
+)
+
+# «фонд ЦДІАК 1164/1» — archive code with fond/opis in slash notation without
+# component labels. The keyword («фонд»/«опись») is kept for readability,
+# only the identifier is masked.
+ARCHIVE_FOND_SLASH_RE = re.compile(
+    r"((?:фонд[ауе]?|опис[ьи]))\s*\**\s*[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\**\s*"
+    r"\d{2,}(?:/\d+[A-Za-zА-Яа-я]?)+\**",
+    re.IGNORECASE,
+)
+
+# Case-number enumerations: «(дела 149, 171, 172)», «дела 12, 15–18», with
+# optional letter-suffixed numbers (428А) and markdown bold markers.
+CASE_LIST_RE = re.compile(
+    r"\(?\**(?:дела|дело)\s+\**\s*"
+    r"(?:\d+[A-Za-zА-Яа-я]?(?:[-–—]\d+[A-Za-zА-Яа-я]?)?[\s,;]*)+\**\)?",
+    re.IGNORECASE,
+)

@@ -137,6 +137,46 @@ def test_slash_false_positives_survive():
     assert "12/корпус/3" in out  # starts with a digit — not a cipher
 
 
+def test_archive_fond_slash_masked():
+    """Session-75 leak: «фонд ЦДІАК 1164/1» — keyword kept, identifier masked."""
+    out = _run(["Браки Киева: фонд **ЦДІАК 1164/1** найдены"])
+    assert "1164" not in out
+    assert "фонд" in out
+    assert "найдены" in out
+
+
+def test_case_list_masked():
+    """«(дела 149, 171, 172)» — the case-number enumeration is the product."""
+    out = _run(["браки (дела 149, 171, 172, 243) охвачены"])
+    assert "149" not in out
+    assert "243" not in out
+    assert "охвачены" in out
+
+
+def test_case_list_letter_suffix_masked():
+    out = _run(["смерти (дела 206, 372, 428А, 430)."])
+    assert "428А" not in out
+    assert "430" not in out
+
+
+def test_long_cipher_sequence_masked():
+    out = _run(["нашёл: фонд Р-585 опись 1 дело 12"])
+    assert "585" not in out
+    assert "нашёл" in out
+
+
+def test_record_number_masked():
+    out = _run(["брак зарегистрирован, запись 1893/196"])
+    assert "1893/196" not in out
+
+
+def test_long_form_false_positives_survive():
+    out = _run(["запись в журнале, опись магазина, годы 1889/1890, дети 5/7"])
+    assert "запись в журнале" in out
+    assert "опись магазина" in out
+    assert "1889/1890" in out
+
+
 def test_cipher_removed_single_delta():
     out = _run(["метрика ф. 585 оп. 1 д. 23 найдена"])
     assert "585" not in out
