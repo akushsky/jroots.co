@@ -39,7 +39,7 @@ export default function VerifyPage() {
                 setCountdown((prev) => {
                     if (prev <= 1) {
                         clearInterval(interval);
-                        navigate("/");
+                        navigate("/app");
                     }
                     return prev - 1;
                 });

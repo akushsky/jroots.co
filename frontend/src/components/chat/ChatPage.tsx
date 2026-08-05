@@ -457,7 +457,7 @@ export default function ChatPage() {
                     <p className="text-xs text-muted-foreground mt-2 text-center">
                         Ответы ассистента — ориентир для поиска, а не гарантия. Проверяйте архивные ссылки.{" "}
                         <Link to="/" className="text-accent hover:underline">
-                            К архивному поисковику
+                            Предпочитаете искать сами? Профессиональный поиск →
                         </Link>
                     </p>
                 </footer>

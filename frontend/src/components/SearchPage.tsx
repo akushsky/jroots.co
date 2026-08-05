@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {Link, useNavigate} from "react-router-dom";
 import {Search} from "lucide-react";
 import {AnimatePresence, motion} from "motion/react";
 import {Input} from "@/components/ui/input";
@@ -161,6 +161,12 @@ export default function SearchPage() {
                 </div>
 
                 <div className="border-b border-border mb-6" />
+
+                <div className="mb-6 -mt-2 text-sm">
+                    <Link to="/chat" className="text-accent hover:underline">
+                        Не нашли сами? Спросите ассистента →
+                    </Link>
+                </div>
 
                 {/* Search input */}
                 <div className="relative">

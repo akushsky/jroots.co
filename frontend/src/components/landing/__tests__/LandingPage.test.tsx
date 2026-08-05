@@ -1,9 +1,11 @@
 import {afterAll, beforeEach, describe, expect, it, vi} from "vitest";
+import type {ComponentProps} from "react";
 import {render, screen, waitFor, within} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter, Route, Routes, useSearchParams} from "react-router-dom";
 import LandingPage from "../LandingPage";
 import {createCheckout} from "@/api/payments";
+import {AuthContext} from "@/contexts/AuthContext";
 
 vi.mock("@/api/payments", () => ({
     createCheckout: vi.fn(),
@@ -13,6 +15,16 @@ const createCheckoutMock = vi.mocked(createCheckout);
 
 const originalLocation = window.location;
 const assignMock = vi.fn();
+
+type AuthValue = ComponentProps<typeof AuthContext.Provider>["value"];
+
+const GUEST_AUTH: AuthValue = {user: null, login: () => {}, logout: () => {}, isAuthenticated: false};
+const LOGGED_IN_AUTH: AuthValue = {
+    user: {email: "u@test.com", username: "user", is_verified: true},
+    login: () => {},
+    logout: () => {},
+    isAuthenticated: true,
+};
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -31,13 +43,15 @@ function ChatStub() {
     return <div>CHAT q={params.get("q")}</div>;
 }
 
-function renderLanding() {
+function renderLanding(auth: AuthValue = GUEST_AUTH) {
     return render(
         <MemoryRouter initialEntries={["/landing"]}>
-            <Routes>
-                <Route path="/landing" element={<LandingPage />} />
-                <Route path="/chat" element={<ChatStub />} />
-            </Routes>
+            <AuthContext.Provider value={auth}>
+                <Routes>
+                    <Route path="/landing" element={<LandingPage />} />
+                    <Route path="/chat" element={<ChatStub />} />
+                </Routes>
+            </AuthContext.Provider>
         </MemoryRouter>,
     );
 }
@@ -97,5 +111,36 @@ describe("LandingPage", () => {
 
         expect(createCheckoutMock).toHaveBeenCalledWith("delo", "polar");
         await waitFor(() => expect(assignMock).toHaveBeenCalledWith("https://pay.example/delo"));
+    });
+
+    it("renders the two-tools section with the pro search card", () => {
+        renderLanding();
+
+        expect(screen.getByRole("heading", {name: "Два инструмента"})).toBeInTheDocument();
+        expect(screen.getByRole("heading", {name: "AI-ассистент"})).toBeInTheDocument();
+        expect(
+            screen.getByRole("heading", {name: "Профессиональный поиск по архивам"}),
+        ).toBeInTheDocument();
+        expect(screen.getByText("Проект «Внезапные евреи»")).toBeInTheDocument();
+        // pro search is always public — straight to SearchPage
+        expect(screen.getByTestId("tool-search-cta")).toHaveAttribute("href", "/");
+    });
+
+    it("points guest CTAs at /signup", () => {
+        renderLanding(GUEST_AUTH);
+
+        expect(screen.getByTestId("header-auth-cta")).toHaveTextContent("Создать аккаунт");
+        expect(screen.getByTestId("header-auth-cta")).toHaveAttribute("href", "/signup");
+        expect(screen.getByTestId("hero-auth-cta")).toHaveAttribute("href", "/signup");
+        expect(screen.getByTestId("tool-chat-cta")).toHaveAttribute("href", "/signup");
+    });
+
+    it("points logged-in CTAs at the /app chooser", () => {
+        renderLanding(LOGGED_IN_AUTH);
+
+        expect(screen.getByTestId("header-auth-cta")).toHaveTextContent("Перейти в чат");
+        expect(screen.getByTestId("header-auth-cta")).toHaveAttribute("href", "/app");
+        expect(screen.getByTestId("hero-auth-cta")).toHaveAttribute("href", "/app");
+        expect(screen.getByTestId("tool-chat-cta")).toHaveAttribute("href", "/app");
     });
 });

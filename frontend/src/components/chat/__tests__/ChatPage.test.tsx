@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
-import {render, screen, waitFor} from "@testing-library/react";
+import {act, render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router-dom";
 import ChatPage from "../ChatPage";
@@ -79,6 +79,11 @@ describe("ChatPage", () => {
         expect(await screen.findByText("Начните с ревизских сказок")).toBeInTheDocument();
         expect(screen.getByText(/Осталось поисков: 3/)).toBeInTheDocument();
 
+        // cross-link to the pro search lives in the footer
+        expect(
+            screen.getByRole("link", {name: /Профессиональный поиск/}),
+        ).toHaveAttribute("href", "/");
+
         const input = screen.getByLabelText("Сообщение ассистенту");
         await user.type(input, "А какие годы охватывают?{Enter}");
 
@@ -127,7 +132,7 @@ describe("ChatPage", () => {
         // no glued text anywhere
         expect(screen.queryByText("Смотрю ревизии…Нашёл совпадение…")).not.toBeInTheDocument();
 
-        finish?.();
+        act(() => finish?.());
         // after done: accordion collapses, the answer stays
         await waitFor(() =>
             expect(screen.queryByText("Смотрю ревизии…")).not.toBeInTheDocument(),

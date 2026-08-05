@@ -6,3 +6,12 @@ if (typeof URL.createObjectURL !== "function") {
     URL.createObjectURL = () => `blob:mock-${++objectUrlCounter}`;
     URL.revokeObjectURL = () => {};
 }
+
+// jsdom has no ResizeObserver; Radix poppers/tooltips crash without it.
+if (typeof globalThis.ResizeObserver !== "function") {
+    globalThis.ResizeObserver = class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    };
+}

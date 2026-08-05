@@ -28,7 +28,7 @@ export default function LoginForm() {
         try {
             const data = await userLogin(email, password);
             login(data.access_token);
-            navigate("/");
+            navigate("/app");
         } catch {
             setError("Неверные учетные данные");
         } finally {

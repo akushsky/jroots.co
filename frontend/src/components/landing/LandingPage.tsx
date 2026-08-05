@@ -1,10 +1,11 @@
 import {useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
-import {ArrowRight, BookOpen, FileSearch, ScrollText} from "lucide-react";
+import {ArrowRight, BookOpen, FileSearch, MessagesSquare, ScrollText, Search} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {Input} from "@/components/ui/input";
 import {Paywall} from "@/components/chat/Paywall";
+import {useAuth} from "@/hooks/useAuth";
 
 const STEPS = [
     {
@@ -55,6 +56,10 @@ const ARTICLES = [
 export default function LandingPage() {
     const navigate = useNavigate();
     const [query, setQuery] = useState("");
+    const {isAuthenticated} = useAuth();
+    // Guests register first; logged-in users go to the /app chooser.
+    const authCtaHref = isAuthenticated ? "/app" : "/signup";
+    const authCtaLabel = isAuthenticated ? "Перейти в чат" : "Создать аккаунт";
 
     const submit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -65,8 +70,16 @@ export default function LandingPage() {
 
     return (
         <div className="max-w-5xl mx-auto px-4 space-y-16 pb-16">
+            {/* Header */}
+            <header className="flex items-center justify-between pt-6">
+                <span className="font-display text-2xl font-bold">JRoots</span>
+                <Button asChild size="sm">
+                    <Link to={authCtaHref} data-testid="header-auth-cta">{authCtaLabel}</Link>
+                </Button>
+            </header>
+
             {/* Hero */}
-            <section className="text-center pt-10 space-y-6">
+            <section className="text-center pt-6 space-y-6">
                 <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">
                     Найдите документы вашей семьи для репатриации
                 </h1>
@@ -87,9 +100,53 @@ export default function LandingPage() {
                         <ArrowRight />
                     </Button>
                 </form>
-                <p className="text-xs text-muted-foreground">
-                    Первые поиски — бесплатно, без карты.
-                </p>
+                <div>
+                    <Button asChild variant="outline">
+                        <Link to={authCtaHref} data-testid="hero-auth-cta">{authCtaLabel}</Link>
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-3">
+                        Первые поиски — бесплатно, без карты.
+                    </p>
+                </div>
+            </section>
+
+            {/* Two tools */}
+            <section className="space-y-6">
+                <h2 className="font-display text-3xl font-semibold text-center">Два инструмента</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                    <Card>
+                        <CardContent className="p-6 flex flex-col gap-3 h-full">
+                            <MessagesSquare className="w-7 h-7 text-accent" />
+                            <h3 className="font-display text-xl font-semibold">AI-ассистент</h3>
+                            <p className="text-sm text-muted-foreground flex-1">
+                                Диалог вместо архивных каталогов: ассистент ищет за вас,
+                                показывает записи и распознаёт сканы документов. Не нужно быть
+                                генеалогом — достаточно семейных преданий.
+                            </p>
+                            <Button asChild className="self-start">
+                                <Link to={authCtaHref} data-testid="tool-chat-cta">Начать поиск</Link>
+                            </Button>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-6 flex flex-col gap-3 h-full">
+                            <Search className="w-7 h-7 text-accent" />
+                            <h3 className="font-display text-xl font-semibold">
+                                Профессиональный поиск по архивам
+                            </h3>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                                Проект «Внезапные евреи»
+                            </p>
+                            <p className="text-sm text-muted-foreground flex-1">
+                                Прямой поиск по агрегированной базе фондов и сканов —
+                                для исследователей, которые хотят копать сами.
+                            </p>
+                            <Button asChild variant="secondary" className="self-start">
+                                <Link to="/" data-testid="tool-search-cta">Открыть поиск</Link>
+                            </Button>
+                        </CardContent>
+                    </Card>
+                </div>
             </section>
 
             {/* How it works */}

@@ -72,7 +72,8 @@ function MarkdownImage({src, alt}: { src?: string; alt?: string }) {
                 />
             </button>
             {open && (
-                <div
+                // span, not div: the markdown <p> renderer may be an ancestor
+                <span
                     role="dialog"
                     aria-label={alt || "Просмотр изображения"}
                     className="fixed inset-0 z-50 bg-foreground/70 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
@@ -83,7 +84,7 @@ function MarkdownImage({src, alt}: { src?: string; alt?: string }) {
                         alt={alt ?? ""}
                         className="max-w-full max-h-full rounded-lg border border-border object-contain"
                     />
-                </div>
+                </span>
             )}
         </>
     );
