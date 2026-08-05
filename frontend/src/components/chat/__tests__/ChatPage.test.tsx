@@ -158,6 +158,39 @@ describe("ChatPage", () => {
         expect(screen.queryByText("Искал в архиве")).not.toBeInTheDocument();
     });
 
+    it("strips <searchlog> from persisted answers into the accordion's «Проверенные базы»", async () => {
+        const user = userEvent.setup();
+        vi.mocked(getSession).mockResolvedValue({
+            ...sessionSummary,
+            messages: [
+                {id: "m1", role: "user", content: "Вопрос"},
+                {
+                    id: "m2",
+                    role: "assistant",
+                    content:
+                        "Ответ с находкой.<searchlog>\nsearch(toldot_cemetery, Клебанов Мордух) → 1 результатов\nsearch(yandex_archive, Клебанов) → 0 результатов\n</searchlog>",
+                },
+            ],
+        });
+
+        const {container} = renderChat();
+
+        expect(await screen.findByText("Ответ с находкой.")).toBeInTheDocument();
+        // raw journal never reaches the DOM
+        expect(container.innerHTML).not.toContain("searchlog");
+        expect(screen.queryByText(/toldot_cemetery/)).not.toBeInTheDocument();
+
+        // open the accordion — the journal lines are there
+        await user.click(screen.getByText("Ход поиска"));
+        expect(await screen.findByText("Проверенные базы")).toBeInTheDocument();
+        expect(
+            screen.getByText("search(toldot_cemetery, Клебанов Мордух) → 1 результатов"),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText("search(yandex_archive, Клебанов) → 0 результатов"),
+        ).toBeInTheDocument();
+    });
+
     it("creates a session on first send when none is active", async () => {
         const user = userEvent.setup();
         vi.mocked(listSessions).mockResolvedValue([]);

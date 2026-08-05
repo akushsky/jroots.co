@@ -150,8 +150,12 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
     return (
         <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
             <div className={cn("max-w-[85%] md:max-w-[75%] min-w-0 flex flex-col gap-1", isUser && "items-end")}>
-                {!isUser && message.steps && (
-                    <StepsBlock steps={message.steps} live={message.live} />
+                {!isUser && (message.steps || message.searchlog) && (
+                    <StepsBlock
+                        steps={message.steps ?? []}
+                        searchlog={message.searchlog}
+                        live={message.live}
+                    />
                 )}
                 <div
                     className={cn(

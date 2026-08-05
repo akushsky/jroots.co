@@ -186,3 +186,78 @@ describe("ChatMessageBubble inline images", () => {
         expect(screen.queryByRole("img")).not.toBeInTheDocument();
     });
 });
+
+describe("ChatMessageBubble searchlog", () => {
+    it("never shows the raw journal in the bubble and keeps it collapsed by default", () => {
+        const {container} = render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    content: "Ответ ассистента",
+                    steps: ["Искал в ревизиях"],
+                    searchlog: ["search(toldot_cemetery, Клебанов Мордух) → 1 результатов"],
+                    live: false,
+                })}
+            />,
+        );
+
+        // no raw tags, and collapsed accordion hides the lines
+        expect(container.innerHTML).not.toContain("searchlog");
+        expect(screen.queryByText(/toldot_cemetery/)).not.toBeInTheDocument();
+        expect(screen.getByText("Ответ ассистента")).toBeInTheDocument();
+        expect(screen.getByText("Ход поиска")).toBeInTheDocument();
+    });
+
+    it("shows journal lines in the «Проверенные базы» subsection when open", () => {
+        render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    steps: ["Искал в ревизиях"],
+                    searchlog: [
+                        "search(toldot_cemetery, Клебанов Мордух) → 1 результатов",
+                        "search(yandex_archive, Клебанов) → ошибка",
+                    ],
+                    live: true,
+                })}
+            />,
+        );
+
+        expect(screen.getByText("Проверенные базы")).toBeInTheDocument();
+        expect(
+            screen.getByText("search(toldot_cemetery, Клебанов Мордух) → 1 результатов"),
+        ).toBeInTheDocument();
+        expect(screen.getByText("search(yandex_archive, Клебанов) → ошибка")).toBeInTheDocument();
+    });
+
+    it("renders the steps list before the journal subsection", () => {
+        const {container} = render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    steps: ["Искал в ревизиях"],
+                    searchlog: ["search(a, x) → 1 результатов"],
+                    live: true,
+                })}
+            />,
+        );
+
+        const block = container.querySelector('[data-testid="steps-block"]')!;
+        const stepsList = block.querySelector("ol")!;
+        const logSection = block.querySelector('[data-testid="searchlog-section"]')!;
+        expect(
+            stepsList.compareDocumentPosition(logSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+    });
+
+    it("renders the accordion with only a journal when there are no steps", () => {
+        render(
+            <ChatMessageBubble
+                message={assistantMessage({
+                    searchlog: ["search(a, x) → 0 результатов"],
+                    live: true,
+                })}
+            />,
+        );
+
+        expect(screen.getByText("Проверенные базы")).toBeInTheDocument();
+        expect(screen.getByText("search(a, x) → 0 результатов")).toBeInTheDocument();
+    });
+});

@@ -20,7 +20,7 @@ import {ChatInput} from "./ChatInput";
 import {Paywall} from "./Paywall";
 import {PaywallContext} from "./PaywallContext";
 import {chatErrorForCode, GENERIC_SEND_ERROR, GENERIC_SESSION_ERROR} from "./errorMessages";
-import {extractSteps} from "./steps";
+import {extractSearchlog, extractSteps} from "./steps";
 import type {ScanAttachment} from "./scans";
 import type {DisplayMessage} from "./types";
 
@@ -112,8 +112,15 @@ export default function ChatPage() {
             setMessages(
                 session.messages.map((m) => {
                     if (m.role === "assistant") {
-                        const {steps, content} = extractSteps(m.content);
-                        return {id: m.id, role: m.role, content, steps: steps ?? undefined};
+                        const {steps, content: withoutSteps} = extractSteps(m.content);
+                        const {lines, rest} = extractSearchlog(withoutSteps);
+                        return {
+                            id: m.id,
+                            role: m.role,
+                            content: rest,
+                            steps: steps ?? undefined,
+                            searchlog: lines.length > 0 ? lines : undefined,
+                        };
                     }
                     return {id: m.id, role: m.role, content: m.content};
                 }),

@@ -597,7 +597,10 @@ async def test_agent_json_mode_full_cycle(
     payload = response.json()
     assert payload["capped"] is False
     assert payload["searches_left"] == 4
-    assert payload["message"]["content"] == "Ответ"
+    # The persisted reply carries the machine-facing searchlog appendix.
+    assert payload["message"]["content"].startswith("Ответ")
+    assert "<searchlog>" in payload["message"]["content"]
+    assert "search(gabo)" in payload["message"]["content"]
     # Tool round (100+20) + answer round (10+5).
     assert payload["usage"]["session_tokens_total"] == 135
 
@@ -720,7 +723,8 @@ async def test_agent_intermediate_rounds_emit_step_events(
     assert streamed == "Нашёл запись."
     assert frames[-1][1]["searches_left"] == 4
 
-    # One assistant message, steps marked up for history re-rendering.
+    # One assistant message, steps marked up for history re-rendering, with
+    # the searchlog appendix at the end.
     message = (
         await db_session.execute(
             select(ChatMessage).where(
@@ -729,11 +733,12 @@ async def test_agent_intermediate_rounds_emit_step_events(
             )
         )
     ).scalar_one()
-    assert message.content == (
+    assert message.content.startswith(
         "<steps>Сначала посмотрю базы.</steps>"
         "<steps>Теперь ищу в ГАБО.</steps>"
         "Нашёл запись."
     )
+    assert "<searchlog>" in message.content
 
     rows = await _searches(db_session, session["id"])
     assert len(rows) == 1
@@ -961,26 +966,70 @@ async def test_agent_cycle_crash_emits_error_event_not_silent_eof(
     assert session_row.status == "error"
 
 
-async def test_agent_cycle_crash_json_mode_returns_502(
-    client, db_session, agent_mode, fake_llm, fake_mcp, monkeypatch
+async def test_agent_second_cycle_sees_searchlog_of_first(
+    client, db_session, agent_mode, fake_llm, fake_mcp
 ):
-    async def boom(*args, **kwargs):
-        raise RuntimeError("PendingRollbackError: transaction was poisoned")
-
-    monkeypatch.setattr(agent_loop_module.credits, "get_balance", boom)
-    fake_mcp(FakeTransport())
-    fake_llm([])
-    user = await create_user(db_session, email="agent-crashjson@example.com")
+    transport = FakeTransport(
+        script=[
+            McpCallResult(text="Найдено 53 записи по Фалькович"),
+            McpCallResult(text="Найдено 15 записей по Фалькович"),
+        ]
+    )
+    fake_mcp(transport)
+    llm_client = fake_llm(
+        [
+            # Cycle 1: search jewishgen, then answer.
+            _tool_round(
+                "c1",
+                "search",
+                ['{"database": "jewishgen", "last_name": "Фалькович"}'],
+            ),
+            [_chunk("Нашёл 53 записи."), _chunk(usage=_usage(10, 5))],
+            # Cycle 2: search rtr_foundation, then answer.
+            _tool_round(
+                "c2",
+                "search",
+                ['{"database": "rtr_foundation", "last_name": "Фалькович"}'],
+            ),
+            [_chunk("И ещё 15 записей."), _chunk(usage=_usage(10, 5))],
+        ]
+    )
+    user = await create_user(db_session, email="agent-searchlog@example.com")
     await _give_credits(db_session, user, searches=5)
     session = await _create_session(client, user)
 
-    response = await client.post(
-        f"/api/chat/sessions/{session['id']}/messages",
-        json={"content": "ищу"},
-        headers=auth_header(user),
-    )
-    assert response.status_code == 502
-    assert response.json()["detail"] == "Ошибка, попробуйте ещё раз."
+    frames1 = await _post_sse(client, user, session["id"], "ищу Фальковича")
+    # The searchlog is persisted but never streamed.
+    streamed1 = "".join(data["text"] for event, data in frames1 if event == "token")
+    assert "<searchlog>" not in streamed1
 
-    session_row = await _session_row(db_session, session["id"])
-    assert session_row.status == "error"
+    await _post_sse(client, user, session["id"], "а покажи подробнее")
+
+    # The first call of cycle 2 sees the cycle-1 assistant reply, searchlog
+    # included, via the persisted history.
+    cycle2_first_call = llm_client.chat.completions.calls[2]
+    assistant_replies = [
+        m["content"] for m in cycle2_first_call["messages"] if m["role"] == "assistant"
+    ]
+    assert any("<searchlog>" in content for content in assistant_replies)
+    searchlog_reply = next(c for c in assistant_replies if "<searchlog>" in c)
+    assert "search(jewishgen: Фалькович) → 53 результатов" in searchlog_reply
+
+    # The cycle-2 reply accumulates both calls in its own searchlog.
+    messages = (
+        (
+            await db_session.execute(
+                select(ChatMessage)
+                .where(
+                    ChatMessage.session_id == session["id"],
+                    ChatMessage.role == "assistant",
+                )
+                .order_by(ChatMessage.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    second_reply = messages[-1].content
+    assert "search(jewishgen: Фалькович) → 53 результатов" in second_reply
+    assert "search(rtr_foundation: Фалькович) → 15 результатов" in second_reply

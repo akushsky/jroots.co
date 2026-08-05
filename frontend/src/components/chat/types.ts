@@ -14,6 +14,8 @@ export interface DisplayMessage {
     pending?: boolean;
     /** Intermediate agent reasoning ("Ход поиска") — one entry per step event, rendered as a list. */
     steps?: string[];
+    /** Agent's search journal from <searchlog> blocks — "Проверенные базы" subsection. */
+    searchlog?: string[];
     /** True while this message is the actively streaming one — steps accordion stays open. */
     live?: boolean;
     /** Scans attached to a user message (thumbnail + file name only; extracted text stays in agent context). */

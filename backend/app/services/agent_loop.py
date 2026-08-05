@@ -38,7 +38,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChatMessage, ChatSession, Search
+from app.models import ChatMessage, ChatSession, Search, ToolCallLog
 from app.services import credits, llm_router, scan_pipeline
 from app.services import mcp_client as mcp_client_module
 from app.services.credits import InsufficientCredits
@@ -225,6 +225,13 @@ async def run_agent_cycle(
     final_text = "".join(visible_parts)
     tool_calls_delta = client.calls_used - initial_tool_calls
 
+    # Factual cross-turn memory: the persisted assistant reply carries the
+    # session's compact tool-call journal (<searchlog>), so the next cycle
+    # sees via _build_messages what was searched where and with what outcome.
+    # Not streamed — machine-facing context only.
+    searchlog = await _build_searchlog(db, session.id)
+    persisted_text = final_text + searchlog
+
     # 5. Successful cycle. A cycle without real MCP work (small talk,
     # clarifying answers) is free: no search journal row, no charge.
     searches_left = balance["searches_left"]
@@ -259,7 +266,7 @@ async def run_agent_cycle(
             await _persist_reply(
                 db,
                 session,
-                final_text,
+                persisted_text,
                 usage["prompt_tokens"],
                 usage["completion_tokens"],
                 tool_calls_delta,
@@ -271,7 +278,7 @@ async def run_agent_cycle(
     message = await _persist_reply(
         db,
         session,
-        final_text,
+        persisted_text,
         usage["prompt_tokens"],
         usage["completion_tokens"],
         tool_calls_delta,
@@ -377,6 +384,65 @@ async def _build_messages(db: AsyncSession, session: ChatSession) -> list[dict]:
     rows = [m for m in result.scalars().all() if m.role in ("user", "assistant")]
     history = await scan_pipeline.augment_history_with_scans(db, rows)
     return [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+
+
+# Cross-turn factual memory: the last N tool calls of the session ride inside
+# the persisted assistant content as a <searchlog> block.
+SEARCHLOG_MAX_LINES = 20
+
+# Argument keys worth showing in the compact journal line, in order.
+_SEARCHLOG_ARG_KEYS = (
+    "last_name",
+    "first_name",
+    "patronymic",
+    "birth_year",
+    "death_year",
+    "place",
+    "query",
+    "record_id",
+    "surname",
+    "category",
+)
+
+_STATUS_OUTCOME = {
+    "error": "error",
+    "cap_blocked": "недоступен",
+}
+
+
+def _format_searchlog_line(row: ToolCallLog) -> str:
+    """One dense line: «search(gabo: Фалькович Шмуил 1890) → 2 результатов»."""
+    args = row.args_json or {}
+    summary = " ".join(
+        str(args[key]) for key in _SEARCHLOG_ARG_KEYS if args.get(key) is not None
+    )
+    target = row.database or ""
+    if summary:
+        target = f"{target}: {summary}" if target else summary
+    outcome = _STATUS_OUTCOME.get(row.status)
+    if outcome is None:
+        outcome = (
+            f"{row.results_count} результатов"
+            if row.results_count is not None
+            else "ok"
+        )
+    return f"{row.tool}({target}) → {outcome}"
+
+
+async def _build_searchlog(db: AsyncSession, session_id: int) -> str:
+    """Compact tool-call journal of the whole session (all cycles), wrapped
+    in <searchlog>...</searchlog>; empty string when nothing was called."""
+    result = await db.execute(
+        select(ToolCallLog)
+        .where(ToolCallLog.session_id == session_id)
+        .order_by(ToolCallLog.id.desc())
+        .limit(SEARCHLOG_MAX_LINES)
+    )
+    rows = list(reversed(result.scalars().all()))
+    if not rows:
+        return ""
+    lines = "\n".join(_format_searchlog_line(row) for row in rows)
+    return f"\n\n<searchlog>\n{lines}\n</searchlog>"
 
 
 async def _persist_reply(
