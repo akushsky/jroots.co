@@ -1,8 +1,10 @@
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
 import time
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -10,7 +12,10 @@ import respx
 from sqlalchemy import func, select
 
 from app.config import get_settings
+from app.database import AsyncSessionLocal
 from app.models import CreditTransaction, Payment, Subscription
+from app.payments import handler as payments_handler
+from app.payments.base import NormalizedPaymentEvent
 from app.services.credits import get_balance
 from tests.conftest import auth_header, create_user
 
@@ -720,3 +725,195 @@ async def test_webhook_malformed_payload_400(client, db_session, payment_setting
     }
     response = await client.post("/api/webhooks/polar", content=body, headers=headers)
     assert response.status_code == 400
+
+
+# --- Status progression on the same provider_payment_id ---
+
+
+async def test_nowpayments_waiting_then_finished_grants_once(
+    client, db_session, payment_settings
+):
+    """NOWPayments delivers waiting → confirming → finished for one payment.
+    The finished event must transition the pending row and grant exactly once.
+    """
+    user = await create_user(db_session, email="np-progress@example.com")
+    order_id = f"{user.id}:scans_pack"
+
+    body, headers = nowpayments_signed_request(
+        nowpayments_payload(order_id, payment_status="waiting")
+    )
+    first = await client.post(
+        "/api/webhooks/nowpayments", content=body, headers=headers
+    )
+    assert first.status_code == 200
+    assert await get_balance(db_session, user.id) == {
+        "searches_left": 0,
+        "scans_left": 0,
+    }
+
+    body, headers = nowpayments_signed_request(
+        nowpayments_payload(order_id, payment_status="finished")
+    )
+    second = await client.post(
+        "/api/webhooks/nowpayments", content=body, headers=headers
+    )
+    assert second.status_code == 200
+    assert second.json()["processed"] is True
+    assert second.json()["duplicate"] is False
+
+    assert await get_balance(db_session, user.id) == {
+        "searches_left": 0,
+        "scans_left": 10,
+    }
+    assert await payment_count(db_session, user.id) == 1
+    payment = (
+        await db_session.execute(select(Payment).where(Payment.user_id == user.id))
+    ).scalar_one()
+    assert payment.status == "succeeded"
+    assert await transaction_count(db_session, user.id) == 1
+
+    # A redelivered finished event is a no-op duplicate — no second grant.
+    body, headers = nowpayments_signed_request(
+        nowpayments_payload(order_id, payment_status="finished")
+    )
+    third = await client.post(
+        "/api/webhooks/nowpayments", content=body, headers=headers
+    )
+    assert third.status_code == 200
+    assert third.json()["duplicate"] is True
+    assert (await get_balance(db_session, user.id))["scans_left"] == 10
+    assert await transaction_count(db_session, user.id) == 1
+
+
+async def test_yukassa_pending_then_succeeded_grants(
+    client, db_session, payment_settings
+):
+    """YuKassa pending → succeeded on the same payment id (re-check decides)."""
+    user = await create_user(db_session, email="yk-progress@example.com")
+    order_id = f"{user.id}:delo:q1"
+    body = json.dumps(yukassa_webhook_payload(order_id=order_id)).encode()
+
+    with respx.mock:
+        route = respx.get("https://api.yookassa.ru/v3/payments/pay_1").mock(
+            side_effect=[
+                httpx.Response(
+                    200, json=yukassa_api_payment("pay_1", order_id, status="pending")
+                ),
+                httpx.Response(
+                    200,
+                    json=yukassa_api_payment("pay_1", order_id, status="succeeded"),
+                ),
+            ]
+        )
+        first = await client.post(
+            "/api/webhooks/yukassa",
+            content=body,
+            headers={"x-forwarded-for": YUKASSA_IP},
+        )
+        assert first.status_code == 200
+        assert await get_balance(db_session, user.id) == {
+            "searches_left": 0,
+            "scans_left": 0,
+        }
+
+        second = await client.post(
+            "/api/webhooks/yukassa",
+            content=body,
+            headers={"x-forwarded-for": YUKASSA_IP},
+        )
+
+    assert second.status_code == 200
+    assert second.json()["processed"] is True
+    assert route.call_count == 2
+    assert await get_balance(db_session, user.id) == {
+        "searches_left": 25,
+        "scans_left": 10,
+    }
+    assert await payment_count(db_session, user.id) == 1
+    payment = (
+        await db_session.execute(select(Payment).where(Payment.user_id == user.id))
+    ).scalar_one()
+    assert payment.status == "succeeded"
+    assert await transaction_count(db_session, user.id) == 1
+
+
+# --- Concurrent duplicate deliveries ---
+
+
+def _np_event(user_id, payment_id="5550009"):
+    return NormalizedPaymentEvent(
+        provider="nowpayments",
+        provider_payment_id=payment_id,
+        order_id=f"{user_id}:scans_pack",
+        user_id=user_id,
+        tariff="scans_pack",
+        amount=Decimal("5.00"),
+        currency="USD",
+        status="succeeded",
+        raw={"payment_id": payment_id, "payment_status": "finished"},
+        event_type="finished",
+    )
+
+
+async def test_concurrent_same_webhook_single_grant_no_errors(
+    db_session, payment_settings
+):
+    """Two simultaneous deliveries of the same webhook on independent
+    sessions: no exception (i.e. no 500 at the route), exactly one grant."""
+    user = await create_user(db_session, email="np-race@example.com")
+    event = _np_event(user.id)
+
+    async def call():
+        async with AsyncSessionLocal() as session:
+            return await payments_handler.process_payment_event(session, event)
+
+    results = await asyncio.gather(call(), call())
+
+    assert sum(1 for r in results if r["processed"]) == 1
+    assert sum(1 for r in results if r["duplicate"]) == 1
+    assert (await get_balance(db_session, user.id))["scans_left"] == 10
+    assert await payment_count(db_session, user.id) == 1
+    assert await transaction_count(db_session, user.id) == 1
+
+
+async def test_insert_race_falls_back_to_duplicate(
+    db_session, payment_settings, monkeypatch
+):
+    """Deterministic insert-race: the loser's dedupe SELECT ran before the
+    winner committed, so its INSERT hits the unique constraint — it must
+    re-read the winner's row and answer duplicate instead of failing."""
+    user = await create_user(db_session, email="np-race2@example.com")
+    winner = Payment(
+        provider="nowpayments",
+        provider_payment_id="5550010",
+        order_id=f"{user.id}:scans_pack",
+        user_id=user.id,
+        tariff="scans_pack",
+        amount=Decimal("5.00"),
+        currency="USD",
+        status="succeeded",
+        raw_payload_json={},
+    )
+    db_session.add(winner)
+    await db_session.commit()
+
+    real_find = payments_handler._find_payment
+    calls = 0
+
+    async def stale_find(db, event):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return None  # raced: dedupe ran before the winner committed
+        return await real_find(db, event)
+
+    monkeypatch.setattr(payments_handler, "_find_payment", stale_find)
+
+    result = await payments_handler.process_payment_event(
+        db_session, _np_event(user.id, payment_id="5550010")
+    )
+
+    assert result["duplicate"] is True
+    assert result["payment_id"] == winner.id
+    # The loser must not grant — the winner row is already terminal.
+    assert await transaction_count(db_session, user.id) == 0

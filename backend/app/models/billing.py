@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Date,
     Numeric,
+    UniqueConstraint,
     func,
 )
 
@@ -18,7 +19,7 @@ class Payment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     provider = Column(String(32), nullable=False)
-    provider_payment_id = Column(String(128), nullable=False, unique=True)
+    provider_payment_id = Column(String(128), nullable=False)
     order_id = Column(String(128), nullable=True)
     user_id = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
@@ -29,6 +30,15 @@ class Payment(Base):
     status = Column(String(32), nullable=True)
     raw_payload_json = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+    # Provider payment ids are only unique within a provider's namespace.
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_payment_id",
+            name="uq_payments_provider_payment_id",
+        ),
+    )
 
 
 class Subscription(Base):
