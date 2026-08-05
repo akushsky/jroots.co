@@ -44,6 +44,7 @@ from app.services import mcp_client as mcp_client_module
 from app.services.credits import InsufficientCredits
 from app.services.mcp_client import McpArchiveClient, McpUnavailableError
 from app.services.prompts import SYSTEM_PROMPT
+from app.services.records_stream import RecordsBlockStream
 from app.services.stream_redactor import StreamRedactor
 
 logger = logging.getLogger("jroots")
@@ -143,7 +144,11 @@ async def run_agent_cycle(
             return
 
         # Teaser tier: the outgoing stream is redacted; the model still sees
-        # full tool results so it can iterate on the search.
+        # full tool results so it can iterate on the search. Both tiers: the
+        # ```records fence is intercepted and replaced with a server-rendered
+        # tier-aware table — raw record JSON never leaves the server.
+        tier = "teaser" if session.is_free else "full"
+        records_stream = RecordsBlockStream(tier)
         redactor = StreamRedactor() if session.is_free else None
         messages = await _build_messages(db, session)
         visible_parts: list[str] = []
@@ -162,25 +167,34 @@ async def run_agent_cycle(
                 round_raw: list[str] = []
                 round_visible: list[str] = []
                 tool_calls: list[dict[str, str]] = []
+
+                def _collect(kind: str, text: str) -> None:
+                    """Records tables are tier-safe by construction; prose
+                    still goes through the teaser redactor."""
+                    if kind == "records":
+                        round_visible.append(text)
+                    elif redactor is not None:
+                        round_visible.append(redactor.feed(text))
+                    else:
+                        round_visible.append(text)
+
                 async for item in llm_router.stream_completion(
                     messages, model, tools=client.openai_tools
                 ):
                     if item["type"] == "token":
                         round_raw.append(item["text"])
-                        out = (
-                            redactor.feed(item["text"])
-                            if redactor is not None
-                            else item["text"]
-                        )
-                        round_visible.append(out)
+                        for kind, text in records_stream.feed(item["text"]):
+                            _collect(kind, text)
                     elif item["type"] == "tool_calls":
                         tool_calls = item["tool_calls"]
                     elif item["type"] == "usage":
                         usage["prompt_tokens"] += item["prompt_tokens"]
                         usage["completion_tokens"] += item["completion_tokens"]
+                # Patterns and fences never span completion rounds — release
+                # everything held back into THIS round's output.
+                for kind, text in records_stream.flush():
+                    _collect(kind, text)
                 if redactor is not None:
-                    # Patterns never span completion rounds — release the
-                    # held-back tail into THIS round's output.
                     round_visible.append(redactor.flush())
 
                 # The event type is decided by how the round ended, so the

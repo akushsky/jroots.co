@@ -112,6 +112,31 @@ def test_image_and_link_side_by_side():
     assert out == f"{IMAGE_PLACEHOLDER} и текст 🔒 конец"
 
 
+def test_slash_cipher_removed():
+    out = _run(["запись ЦДІАК/W/1164/1/423 найдена"])
+    assert "1164" not in out
+    assert "ЦДІАК" not in out
+    assert "найдена" in out
+
+
+def test_slash_cipher_with_dashed_series_removed():
+    out = _run(["дело ГАБО/Р-585/1/12 ок"])
+    assert "Р-585" not in out
+    assert "ок" in out
+
+
+def test_slash_cipher_split_across_deltas():
+    out = _run(["шифр ЦДІА", "К/W/116", "4/1/423 конец"])
+    assert "1164" not in out
+    assert "конец" in out
+
+
+def test_slash_false_positives_survive():
+    out = _run(["см. и/или далее, здание 12/корпус/3, год 1890/1891"])
+    assert "и/или" in out
+    assert "12/корпус/3" in out  # starts with a digit — not a cipher
+
+
 def test_cipher_removed_single_delta():
     out = _run(["метрика ф. 585 оп. 1 д. 23 найдена"])
     assert "585" not in out

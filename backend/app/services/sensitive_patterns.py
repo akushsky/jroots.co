@@ -63,6 +63,18 @@ MD_LINK_DEST_TAIL_RE = re.compile(r"!?\[[^\]\n]{0,100}\]\(\S*$")
 # construct whose «[» arrives with the next delta.
 TRAILING_BANG_RE = re.compile(r"!$")
 
+# Slash-notation archive cipher: «ЦДІАК/W/1164/1/423», «ГАБО/Р-585/1/12».
+# Structure: archive code (letters) + optional single-letter series segment
+# + at least two digit-bearing segments. Ukrainian letters included — these
+# ciphers come from Ukrainian archives. No tail pattern needed: a slash
+# cipher contains no whitespace, so the partial-token hold-back covers
+# split deltas. Applied AFTER URL_FULL_RE so URL paths are never mangled.
+SLASH_CIPHER_RE = re.compile(
+    r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ][\w.-]*"
+    r"(?:/[A-Za-zА-Яа-яЁёІіЇїЄєҐґ])?"
+    r"(?:/[\w.-]*\d[\w.-]*){2,}"
+)
+
 # A cipher sequence: one or more «ф./оп./д./л. <num>» components with their
 # trailing separators, e.g. «ф. 585 оп. 1 д. 23» or «оп.1, д.5». «л.» (лист)
 # is included on top of the detector set — a sheet number without fond/opis

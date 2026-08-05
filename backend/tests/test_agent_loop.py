@@ -1033,3 +1033,164 @@ async def test_agent_second_cycle_sees_searchlog_of_first(
     second_reply = messages[-1].content
     assert "search(jewishgen: Фалькович) → 53 результатов" in second_reply
     assert "search(rtr_foundation: Фалькович) → 15 результатов" in second_reply
+
+
+_RECORDS_BLOCK = (
+    '[{"type": "metric_book", "place": "Клинцы", "period": "1890-1895", '
+    '"names": ["Шмуил Фалькович"], "archive": "ГАБО", '
+    '"cipher": "ф.585 оп.1 д.12", "url": "https://archive.example/r/1"}]'
+)
+
+
+async def _assistant_content(db_session, session_id):
+    message = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    return message.content
+
+
+async def test_agent_teaser_records_block_server_rendered(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            [
+                _chunk("Итог:\n"),
+                _chunk("```rec"),
+                _chunk("ords\n"),
+                _chunk(_RECORDS_BLOCK[:40]),
+                _chunk(_RECORDS_BLOCK[40:]),
+                _chunk("\n```\n"),
+                _chunk("Подробности выше."),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-rec-teaser@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+
+    # Server-rendered teaser table: masked names, lock — no raw JSON, no
+    # cipher, no URL, neither in the stream nor in the persisted reply.
+    for text in (streamed, await _assistant_content(db_session, session["id"])):
+        assert "Шмуи…" in text
+        assert "Фалькович" not in text
+        assert "585" not in text
+        assert "archive.example" not in text
+        assert "```records" not in text
+        assert '"cipher"' not in text
+        assert "🔒 доступно в полной версии" in text
+        assert "| Тип | Место | Период | Имена | Запись |" in text
+    assert "Итог:" in streamed
+    assert "Подробности выше." in streamed
+
+
+async def test_agent_full_records_block_renders_everything(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            [
+                _chunk("```records\n"),
+                _chunk(_RECORDS_BLOCK),
+                _chunk("\n```"),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-rec-full@example.com")
+    db_session.add(
+        Payment(
+            provider="stripe",
+            provider_payment_id="pay-rec-1",
+            user_id=user.id,
+            status="succeeded",
+        )
+    )
+    await db_session.commit()
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+    assert session["is_free"] is False
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+    assert "Шмуил Фалькович" in streamed
+    assert "ф.585 оп.1 д.12" in streamed
+    assert "[открыть](https://archive.example/r/1)" in streamed
+    assert "```records" not in streamed  # the fence itself is replaced
+
+
+async def test_agent_teaser_broken_records_block_dropped(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            [
+                _chunk("До блока.\n"),
+                _chunk("```records\n"),
+                _chunk('[{"cipher": "ф.585'),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-rec-broken@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+    # Unterminated block with broken JSON: dropped silently, prose survives.
+    assert "585" not in streamed
+    assert "cipher" not in streamed
+    assert "```" not in streamed
+    assert "До блока." in streamed
+
+    persisted = await _assistant_content(db_session, session["id"])
+    assert "585" not in persisted
+    assert "```" not in persisted
+
+
+async def test_agent_teaser_prose_without_block_still_clean(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    # The model ignored the records-block instruction and put sensitive data
+    # straight into prose — the redactor still covers ciphers and URLs.
+    transport = FakeTransport(script=[McpCallResult(text="Найдено 1 запись")])
+    fake_mcp(transport)
+    fake_llm(
+        [
+            _tool_round("c1", "search", ['{"database": "gabo"}']),
+            [
+                _chunk("Запись ЦДІАК/W/1164/1/423 и ф. 585 оп. 1 д. 23, "),
+                _chunk("https://archive.example/r/1"),
+                _chunk(usage=_usage(10, 5)),
+            ],
+        ]
+    )
+    user = await create_user(db_session, email="agent-rec-prose@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    streamed = "".join(data["text"] for event, data in frames if event == "token")
+    assert "1164" not in streamed
+    assert "ЦДІАК" not in streamed
+    assert "585" not in streamed
+    assert "archive.example" not in streamed

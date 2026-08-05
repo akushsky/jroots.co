@@ -28,6 +28,7 @@ from app.services.sensitive_patterns import (
     MD_LINK_FULL_RE,
     MD_LINK_OPEN_TAIL_RE,
     PARTIAL_TOKEN_TAIL_RE,
+    SLASH_CIPHER_RE,
     TRAILING_BANG_RE,
     URL_FULL_RE,
     URL_PLACEHOLDER,
@@ -37,11 +38,13 @@ from app.services.sensitive_patterns import (
 def _redact(text: str) -> str:
     """Rewrite complete markdown images/links, bare URLs and cipher sequences
     in a final text span. Order matters: the image construct contains a
-    link-shaped tail, and the link pattern consumes its URL — so images
-    first, links second, bare URLs last."""
+    link-shaped tail, the link pattern consumes its URL, and the slash cipher
+    must run after URLs so URL paths are never mangled — so: images, links,
+    bare URLs, slash ciphers, «ф./оп./д.» sequences."""
     text = MD_IMAGE_FULL_RE.sub(IMAGE_PLACEHOLDER, text)
     text = MD_LINK_FULL_RE.sub(lambda m: f"{m.group(1)} 🔒", text)
     text = URL_FULL_RE.sub(URL_PLACEHOLDER, text)
+    text = SLASH_CIPHER_RE.sub("", text)
     return CIPHER_SEQ_RE.sub("", text)
 
 
