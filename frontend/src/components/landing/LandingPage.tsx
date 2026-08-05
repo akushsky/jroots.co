@@ -57,8 +57,8 @@ export default function LandingPage() {
     const navigate = useNavigate();
     const [query, setQuery] = useState("");
     const {isAuthenticated} = useAuth();
-    // Guests register first; logged-in users go to the /app chooser.
-    const authCtaHref = isAuthenticated ? "/app" : "/signup";
+    // Guests register first; logged-in users go straight to the chat.
+    const authCtaHref = isAuthenticated ? "/chat" : "/signup";
     const authCtaLabel = isAuthenticated ? "Перейти в чат" : "Создать аккаунт";
 
     const submit = (e: React.FormEvent) => {

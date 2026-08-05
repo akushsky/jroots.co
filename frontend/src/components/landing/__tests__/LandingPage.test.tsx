@@ -135,12 +135,12 @@ describe("LandingPage", () => {
         expect(screen.getByTestId("tool-chat-cta")).toHaveAttribute("href", "/signup");
     });
 
-    it("points logged-in CTAs at the /app chooser", () => {
+    it("points logged-in CTAs straight at /chat", () => {
         renderLanding(LOGGED_IN_AUTH);
 
         expect(screen.getByTestId("header-auth-cta")).toHaveTextContent("Перейти в чат");
-        expect(screen.getByTestId("header-auth-cta")).toHaveAttribute("href", "/app");
-        expect(screen.getByTestId("hero-auth-cta")).toHaveAttribute("href", "/app");
-        expect(screen.getByTestId("tool-chat-cta")).toHaveAttribute("href", "/app");
+        expect(screen.getByTestId("header-auth-cta")).toHaveAttribute("href", "/chat");
+        expect(screen.getByTestId("hero-auth-cta")).toHaveAttribute("href", "/chat");
+        expect(screen.getByTestId("tool-chat-cta")).toHaveAttribute("href", "/chat");
     });
 });
