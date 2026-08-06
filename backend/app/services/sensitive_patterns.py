@@ -131,10 +131,45 @@ PARTIAL_TOKEN_TAIL_RE = re.compile(r"\S+$")
 # the keyword, but digits never start — the digit requirement keeps it from
 # holding prose indefinitely.
 LONG_CIPHER_TAIL_RE = re.compile(
-    r"(?:фонд|опись|дело|дела|деле|запись|ед\.?\s*хранения)"
+    r"(?:фонд[ыауе]?|опис[ьиея]|дел[аое]?|запис[ьиея]|записей|микрофильм[ыа]?|"
+    r"ед\.?\s*хранения)"
     r"[\w\s№.,;()*/–—-]{0,60}\d[\w\s№.,;()*/–—-]*$",
     re.IGNORECASE,
 )
+
+# Loose keyword-at-tail candidate: keyword followed by up to 60 cipher-ish
+# characters to the buffer end, NO digit required — catches the keyword split
+# from its digits across deltas («номер » + «21166950»). Used via
+# long_cipher_tail_len, which rejects prose tails.
+_LOOSE_CIPHER_TAIL_RE = re.compile(
+    r"(?:фонд[ыауе]?|опис[ьиея]|дел[аое]?|запис[ьиея]|записей|микрофильм[ыа]?|"
+    r"номер|id|№|ед\.?\s*хранения)"
+    r"[\w\s№.,;()*/–—-]{0,60}$",
+    re.IGNORECASE,
+)
+
+# A 3+ lowercase-letter word after the keyword means the tail is ordinary
+# prose («запись в журнале», «дело было») — do not hold it back.
+_TAIL_PROSE_WORD_RE = re.compile(r"[a-zа-яёіїєґ]{3,}")
+
+
+def long_cipher_tail_len(text: str) -> int:
+    """Length of a trailing keyword-started fragment worth holding back.
+
+    Covers the keyword-split-from-digits case («номер » + «21166950») while
+    not holding plain prose: if the fragment after the keyword contains a
+    3+ lowercase-letter word, it is prose and the hold is refused.
+    """
+    match = _LOOSE_CIPHER_TAIL_RE.search(text)
+    if not match:
+        return 0
+    tail = match.group(0)
+    # Skip the keyword itself (up to the first space).
+    after = tail.split(None, 1)
+    if len(after) > 1 and _TAIL_PROSE_WORD_RE.search(after[1]):
+        return 0
+    return len(tail)
+
 
 # Long-form cipher sequences: «фонд Р-585 опись 1», «дело 415, запись № 12»,
 # «запись 1893/196». The abbreviated CIPHER_SEQ_RE only knows «ф./оп./д.» —
@@ -143,7 +178,7 @@ LONG_CIPHER_TAIL_RE = re.compile(
 # журнале» stay untouched.
 LONG_CIPHER_SEQ_RE = re.compile(
     r"(?:(?:фонд|опись|дело|деле|запись|ед\.?\s*хранения)\s*№?\s*"
-    r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\d+[A-Za-zА-Яа-я]?"
+    r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\d+(?!\d)[A-Za-zА-Яа-я]?(?!\s*год[ау]?)"
     r"(?:[-–—/]\d+[A-Za-zА-Яа-я]?)?[\s,;]*)+",
     re.IGNORECASE,
 )
@@ -153,5 +188,42 @@ LONG_CIPHER_SEQ_RE = re.compile(
 CASE_LIST_RE = re.compile(
     r"\(?\**(?:дела|дело)\s+\**\s*"
     r"(?:\d+[A-Za-zА-Яа-я]?(?:[-–—]\d+[A-Za-zА-Яа-я]?)?[\s,;]*)+\**\)?",
+    re.IGNORECASE,
+)
+
+# Bare source domains without a scheme. The URL pattern only catches
+# http(s):// and www. — a domain dropped into prose («проверьте
+# online.archives.ru») guides the free user straight to the source, which
+# defeats the teaser. Maintained list of source domains we actually proxy.
+SOURCE_DOMAIN_RE = re.compile(
+    r"\b(?:"
+    r"toldot\.com|jewishgen\.org|pamyat-naroda\.ru|pamyat-naroda\.com|"
+    r"obd-memorial\.ru|yadvashem\.org|pomnim\.online|mitzvatemet\.com|"
+    r"cgamos\.ru|online\.archives\.ru|archives\.gov\.pl|"
+    r"szukajwarchiwach\.gov\.pl|szukajwarchiwach\.pl|genealodzy\.pl|"
+    r"jri-poland\.org|geni\.com|familio\.org|gravlov\.com|"
+    r"jewishgen\.org|babynyar\.org|goskatalog\.ru|gwar\.mil\.ru|"
+    r"spbarchives\.ru|fgurgia\.ru|duckarchive\.com|openlist\.wiki"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Identifier keywords that turn a number into a product leak: «фонды
+# 2234548, 2255342», «микрофильмы 2373292, 2375369», «записей 91952313».
+# Plurals and the record-id variants («записи», «записей») included; plain
+# «запись 1894 года» (a year, not an id) is excluded by the negative
+# lookahead for год-words and by requiring ≥3 digits or a slash.
+IDENT_LIST_RE = re.compile(
+    r"(?:фонд[ыауе]?|опис[ьиея]|дел[ао]?|запис[ьи]|записей|микрофильм[ыа]?|"
+    r"плёнк[иа]|пленк[иа])\s*№?\s*\**"
+    r"(?:[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\d+(?!\d)[A-Za-zА-Яа-я]?(?!\s*год[ау]?)"
+    r"(?:[-–—/]\d+)?[\s,;]*)+",
+    re.IGNORECASE,
+)
+
+# Bare numeric record ids: 5+ digits after an id-ish marker («id 91952313»,
+# «№ 21166950», «номер записи 20801411»). Years (4 digits) never match.
+NUMERIC_ID_RE = re.compile(
+    r"(?:id|ID|№|номер(?:\s+записи)?)\s*[:№]?\s*\d{5,}\b",
     re.IGNORECASE,
 )

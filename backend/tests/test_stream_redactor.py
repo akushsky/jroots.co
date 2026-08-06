@@ -177,6 +177,43 @@ def test_long_form_false_positives_survive():
     assert "1889/1890" in out
 
 
+def test_bare_source_domain_masked():
+    out = _run(["проверьте online.archives.ru и toldot.com напрямую"])
+    assert "online.archives.ru" not in out
+    assert "toldot.com" not in out
+    assert "проверьте" in out
+
+
+def test_record_year_phrase_survives():
+    """«запись 1894 года» — год, не id; маскировать нельзя."""
+    out = _run(["заказать полную запись 1894 года в архиве"])
+    assert "1894 года" in out
+
+
+def test_record_id_with_letter_masked():
+    out = _run(["заказать запись M1483 в архиве"])
+    assert "M1483" not in out
+
+
+def test_fonds_plural_list_masked():
+    out = _run(["фонды 2234548, 2255342, 2255902 и др."])
+    assert "2234548" not in out
+    assert "2255902" not in out
+
+
+def test_microfilm_ids_masked():
+    out = _run(["микрофильмы 2373292, 2375369, 2375370"])
+    assert "2373292" not in out
+    assert "2375370" not in out
+
+
+def test_numeric_record_id_masked():
+    out = _run(["id записи 91952313 в базе"])
+    assert "91952313" not in out
+    out2 = _run(["номер 21166950"])
+    assert "21166950" not in out2
+
+
 def test_cipher_removed_single_delta():
     out = _run(["метрика ф. 585 оп. 1 д. 23 найдена"])
     assert "585" not in out

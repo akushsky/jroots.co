@@ -1195,3 +1195,30 @@ async def test_agent_teaser_prose_without_block_still_clean(
     assert "ЦДІАК" not in streamed
     assert "585" not in streamed
     assert "archive.example" not in streamed
+
+
+async def test_agent_round_cap_forces_final_answer_and_charges(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    """Round cap (12 tool rounds) must still yield a final answer via the
+    forced wrap-up completion, and the cycle charges (answer exists)."""
+    transport = FakeTransport(script=[McpCallResult(text="1 запись")] * 12)
+    fake_mcp(transport, max_calls=99)
+    scripts = [_tool_round(f"c{i}", "search", ['{"database": "gabo"}']) for i in range(12)]
+    scripts.append(
+        [
+            _chunk("Итог: нашёл одну запись по вашей семье."),
+            _chunk(usage=_usage(50, 20)),
+        ]
+    )
+    fake_llm(scripts)
+    user = await create_user(db_session, email="agent-roundcap@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    events = [event for event, _ in frames]
+    assert "done" in events
+    final_text = "".join(data["text"] for event, data in frames if event == "token")
+    assert "Итог: нашёл одну запись" in final_text
+    assert frames[-1][1]["searches_left"] == 4  # charged once

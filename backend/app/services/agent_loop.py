@@ -156,6 +156,7 @@ async def run_agent_cycle(
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
         model = llm_router.select_model({})
         generations = estimate_generations(user_content)
+        final_answer_produced = False
 
         try:
             for _round in range(MAX_AGENT_ROUNDS):
@@ -209,6 +210,7 @@ async def run_agent_cycle(
                     for out in round_visible:
                         if out:
                             yield "token", {"text": out}
+                    final_answer_produced = True
                     break
 
                 step_text = "".join(round_visible)
@@ -224,6 +226,42 @@ async def run_agent_cycle(
                     MAX_AGENT_ROUNDS,
                     session.id,
                 )
+                # The loop ended without a final answer (round cap or the
+                # model kept asking for tools past the call cap). Force one
+                # wrap-up completion with tools disabled so the user always
+                # gets an answer, never bare steps.
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Подведи итог по уже найденному как естественное "
+                            "завершение поиска, НЕ упоминая лимиты, капы или "
+                            "технические ограничения. Если находок мало — "
+                            "предложи, как пользователю сузить задачу."
+                        ),
+                    }
+                )
+                round_raw = []
+                round_visible = []
+                async for item in llm_router.stream_completion(
+                    messages, model, tools=None
+                ):
+                    if item["type"] == "token":
+                        round_raw.append(item["text"])
+                        for kind, text in records_stream.feed(item["text"]):
+                            _collect(kind, text)
+                    elif item["type"] == "usage":
+                        usage["prompt_tokens"] += item["prompt_tokens"]
+                        usage["completion_tokens"] += item["completion_tokens"]
+                for kind, text in records_stream.flush():
+                    _collect(kind, text)
+                if redactor is not None:
+                    round_visible.append(redactor.flush())
+                visible_parts.extend(round_visible)
+                for out in round_visible:
+                    if out:
+                        yield "token", {"text": out}
+                final_answer_produced = True
         except McpUnavailableError:
             logger.exception("MCP failed mid-cycle, session %d", session.id)
             await _mark_technical_error(db, session, client, initial_tool_calls)
@@ -249,16 +287,18 @@ async def run_agent_cycle(
         # Final whole-text safety pass: streaming redaction can miss a cipher
         # whose context left the buffer («фонд ЦДІАК» in one delta, bare
         # «1164/1/534» in the next); a persist-bound text has no such excuse.
-        # The searchlog lines are tool metadata, not user-facing content, so
-        # they pass through untouched (database names are not ciphers).
-        persisted_text = _redact_whole(final_text) + searchlog
+        # The searchlog passes through the same pass — it must never carry
+        # record handles (ref:N) or leftover identifiers either.
+        persisted_text = _redact_whole(final_text) + _redact_whole(searchlog)
     else:
         persisted_text = final_text + searchlog
 
     # 5. Successful cycle. A cycle without real MCP work (small talk,
     # clarifying answers) is free: no search journal row, no charge.
     searches_left = balance["searches_left"]
-    if tool_calls_delta > 0:
+    # Charge only a cycle that both did real MCP work AND produced a final
+    # answer — charging for a search that ended without an answer is theft.
+    if tool_calls_delta > 0 and final_answer_produced:
         search_row = Search(
             session_id=session.id,
             user_id=session.user_id,
@@ -422,7 +462,6 @@ _SEARCHLOG_ARG_KEYS = (
     "death_year",
     "place",
     "query",
-    "record_id",
     "surname",
     "category",
 )
