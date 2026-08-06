@@ -1,5 +1,6 @@
 import {Children, useState, type ReactNode} from "react";
 import ReactMarkdown, {type Components} from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {AlertTriangle} from "lucide-react";
 import {cn} from "@/lib/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
@@ -192,7 +193,7 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
                             {message.content}
                         </>
                     ) : (
-                        <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</ReactMarkdown>
                     )}
                     {message.capped && !message.error && (
                         <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-background/60 border border-border rounded-full px-2.5 py-1">
