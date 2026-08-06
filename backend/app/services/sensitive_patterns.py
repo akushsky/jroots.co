@@ -230,6 +230,13 @@ NUMERIC_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Museum/ledger identifiers with a letter prefix and 3+ digits after the
+# dash: «КП-10107», «Ф-429-275», «АБГ Прог-6701». The 3+ digit requirement
+# keeps vehicle/model designations («Т-34», «МиГ-21») out of the match.
+DASH_ID_RE = re.compile(
+    r"\b[A-ZА-ЯЁІЇЄҐ]{1,4}(?:\s[А-Яа-яЁёІіЇїЄєҐґ]{2,10})?-\d{3,}(?:[-/]\d+)*"
+)
+
 # A bare list of 3+ ids («2489, 2486, 2493, 13368») with no keyword at all.
 # 4+ digits per item; excluded when followed by год-words (year lists like
 # «1889, 1890, 1891 годы» stay).

@@ -46,6 +46,7 @@ from app.services.sensitive_patterns import (
     MD_LINK_OPEN_TAIL_RE,
     NUMERIC_ID_RE,
     ID_LIST_RE,
+    DASH_ID_RE,
     PARTIAL_TOKEN_TAIL_RE,
     SLASH_CIPHER_RE,
     SOURCE_DOMAIN_RE,
@@ -73,6 +74,7 @@ def _redact(text: str) -> str:
     text = IDENT_LIST_RE.sub(" 🔒 ", text)
     text = NUMERIC_ID_RE.sub(" 🔒 ", text)
     text = ID_LIST_RE.sub(" 🔒 ", text)
+    text = DASH_ID_RE.sub(" 🔒 ", text)
     text = LONG_CIPHER_SEQ_RE.sub(" 🔒 ", text)
     return CIPHER_SEQ_RE.sub("", text)
 
