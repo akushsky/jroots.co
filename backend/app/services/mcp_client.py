@@ -66,6 +66,15 @@ TOOL_UNKNOWN_MESSAGE = "Error: инструмент '{name}' недоступе�
 
 EMPTY_RESULT_MESSAGE = "Error: пустой ответ поискового сервиса."
 
+# Per-database timeout overrides (seconds) for archives that are slow by
+# design. The default (jroots_mcp_timeout_seconds, 30s) kills Samara ELAR
+# instances whose own p90 is ~90s — the call would error out every time.
+SLOW_DATABASE_TIMEOUTS: dict[str, float] = {
+    "elar_archive": 150.0,  # Samara ЦГАСО/СОГАСПИ instances: ~90s p90
+    "cgamos": 90.0,  # mos.ru-backed auth chains can take a while
+    "pamyat_naroda": 90.0,  # BotBrowser/CDP solving under load
+}
+
 
 class McpUnavailableError(Exception):
     """The MCP gateway is unreachable or broke mid-cycle (technical failure)."""
@@ -157,8 +166,10 @@ class StreamableHttpMcpTransport:
         return tools
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> McpCallResult:
+        database = arguments.get("database") if isinstance(arguments, dict) else None
+        timeout = SLOW_DATABASE_TIMEOUTS.get(str(database), self._timeout)
         result = await asyncio.wait_for(
-            self._session.call_tool(name, arguments), timeout=self._timeout
+            self._session.call_tool(name, arguments), timeout=timeout
         )
         content = getattr(result, "content", None) or []
         text = "\n".join(
