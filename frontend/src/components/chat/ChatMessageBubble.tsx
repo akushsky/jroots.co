@@ -113,6 +113,21 @@ const markdownComponents: Components = {
     code: ({children}) => (
         <code className="bg-muted px-1 py-0.5 rounded text-[0.85em]">{children}</code>
     ),
+    // GFM tables get no borders/padding from the Tailwind preflight —
+    // give the records table an actual grid so columns don't collapse.
+    table: ({children}) => (
+        <div className="overflow-x-auto my-2">
+            <table className="w-full border-collapse text-sm">{children}</table>
+        </div>
+    ),
+    th: ({children}) => (
+        <th className="border border-border bg-muted/60 px-2.5 py-1.5 text-left font-semibold whitespace-nowrap">
+            {children}
+        </th>
+    ),
+    td: ({children}) => (
+        <td className="border border-border px-2.5 py-1.5 align-top">{children}</td>
+    ),
 };
 
 function TypingIndicator() {
