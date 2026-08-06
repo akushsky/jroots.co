@@ -30,6 +30,7 @@ def _scan_payload(scan: Scan) -> dict:
             "names": metadata.get("names") or [],
             "dates": metadata.get("dates") or [],
             "place": metadata.get("place"),
+            "confidence": metadata.get("confidence"),
         },
         "model_used": scan.model_used,
         "watermarked": bool(scan.watermarked),

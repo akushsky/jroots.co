@@ -182,6 +182,7 @@ async def extract_scan_content(jpeg_bytes: bytes) -> tuple[str, dict[str, Any], 
         attempts.append(settings.llm_model_escalation)
 
     last_error: Exception | None = None
+    best_low: tuple[str, dict[str, Any], str] | None = None
     for model in attempts:
         try:
             response = await client.chat.completions.create(
@@ -199,12 +200,28 @@ async def extract_scan_content(jpeg_bytes: bytes) -> tuple[str, dict[str, Any], 
                 "names": _string_list(payload.get("names")),
                 "dates": _string_list(payload.get("dates")),
                 "place": payload.get("place"),
+                "confidence": payload.get("confidence"),
             }
             return str(payload["transcription"]), metadata, model
+        if payload is not None and best_low is None:
+            # Parseable but low-confidence: keep as the fallback — after all
+            # models escalate, a best-effort reading with a caveat beats a
+            # hard failure that leaves the user with nothing.
+            metadata = {
+                "doc_type": payload.get("doc_type"),
+                "names": _string_list(payload.get("names")),
+                "dates": _string_list(payload.get("dates")),
+                "place": payload.get("place"),
+                "confidence": "low",
+            }
+            best_low = (str(payload["transcription"]), metadata, model)
         logger.info(
             "Vision output on %s is unparseable or low-confidence, escalating",
             model,
         )
+
+    if best_low is not None:
+        return best_low
 
     raise VisionExtractionError(
         f"Vision extraction failed on all models (last error: {last_error})"

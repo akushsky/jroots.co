@@ -249,6 +249,7 @@ async def test_upload_success_free_user_watermarked(client, db_session, fake_vis
         "names": ["Шлема Кацнельсон", "Хая Рабинович"],
         "dates": ["1850"],
         "place": "Клинцы",
+        "confidence": "high",
     }
     assert payload["model_used"] == get_settings().llm_model_main
     assert payload["watermarked"] is True
@@ -560,3 +561,32 @@ async def test_message_with_unknown_scan_id_returns_400(
     )
 
     assert response.status_code == 400
+
+
+async def test_both_models_low_confidence_returns_best_effort(
+    client, db_session, fake_vision
+):
+    """Both models low-confidence → best-effort result with caveat, not a
+    hard error that leaves the user with nothing."""
+    low = json.dumps(
+        {
+            "transcription": "[неразборчиво] фамилия похожа на Клебанов",
+            "doc_type": "метрическая запись",
+            "names": ["Клебанов"],
+            "dates": [],
+            "place": None,
+            "confidence": "low",
+        }
+    )
+    vision = fake_vision([low, low])
+    user = await create_user_with_scans(db_session, email="scan-bothlow@example.com")
+    session_id = await create_chat_session(client, user)
+
+    response = await upload_scan(client, user, session_id, make_image_bytes())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "done"
+    assert "Клебанов" in body["extracted_text"]
+    assert body["metadata"]["confidence"] == "low"
+    assert len(vision.calls) == 2  # both models tried
