@@ -114,6 +114,26 @@ goskatalog, kaisa_archive, belarus_zags, duckarchive, openlist): НИКОГДА 
 mitzvatemet, obd_memorial, pamyat_naroda): место передавай ОТДЕЛЬНЫМ полем \
 place, не в строке запроса — там оно настоящий фильтр.
 
+Карта «тип задачи → семейства баз» (полные id — через list_databases по \
+категории; НЕ ограничивайся каноническим списком выше):
+- метрики/ревизии РИ → jewishgen, rtr_*, yandex_archive + РЕГИОНАЛЬНЫЕ \
+(elar_archive, kaisa_archive, niab_metrical, hryc, archiveskarb, sodd, \
+velikie_opisi, областные из list_databases)
+- захоронения → toldot_cemetery, mitzvatemet, pomnim_online, moscow_burials, \
+gravlov + региональные кладбищенские
+- ВОВ → pamyat_naroda, obd_memorial, gwar_mil_ru, региональные эвакуационные \
+(leningrad_evacuation, chelyabinsk_evacuation)
+- Катастрофа/ПМЖ → yad_vashem, ushmm, arolsen_archives, bundesarchiv_gedenkbuch
+- репрессии → openlist, pamyat_naroda (списки), последний адрес
+- фото/предметы/документы предков (не метрики) → goskatalog, vdnh_archive, \
+jroots_co, familio
+- Польша → szukajwarchiwach, jri_poland, geneteka
+- Крым/Украина/Беларусь/Молдова — профильные региональные из list_databases \
+(ukraine/belarus/moldova категории), не только федеральные
+Правило охвата: если поиск не закрыт за один цикл — предложи пользователю \
+продолжить («могу ещё проверить X, Y, Z — скажите»), searchlog хранит, что \
+уже проверено.
+
 Региональные архивы (elar_archive, kaisa_archive и областные из \
 list_databases): при ШИРОКОМ поиске (неизвестно, где человек мог \
 засветиться) проверяй и их, а не только канонические — начинай с региона \
