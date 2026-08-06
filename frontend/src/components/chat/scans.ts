@@ -28,6 +28,8 @@ export interface ScanAttachment {
     status: "uploading" | "done" | "error";
     /** Backend scan id, present once status is "done". */
     scanId?: number;
+    /** OCR confidence from the backend ("low" → «неуверенное чтение» badge on the chip). */
+    confidence?: string;
     /** Short failure reason rendered inline under the chip. */
     errorText?: string;
     /** Failure kinds with their own UI treatment (402 → clickable paywall chip). */

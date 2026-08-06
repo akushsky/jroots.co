@@ -488,4 +488,46 @@ describe("ChatPage", () => {
 
         expect(await screen.findByText(/сожмите или обрежьте скан/)).toBeInTheDocument();
     });
+
+    it("201 with status:error in the body turns the chip into an error, not eternal processing", async () => {
+        const user = userEvent.setup();
+        vi.mocked(uploadScan).mockResolvedValue({
+            ...scanDone,
+            status: "error",
+            extracted_text: "",
+        });
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+
+        expect(await screen.findByText("Не удалось прочитать документ")).toBeInTheDocument();
+        expect(screen.queryByText("Обработка…")).not.toBeInTheDocument();
+        expect(screen.queryByText("Готово")).not.toBeInTheDocument();
+        // the chip stays removable
+        expect(screen.getByRole("button", {name: "Удалить скан metrika.jpg"})).toBeInTheDocument();
+    });
+
+    it("shows the «неуверенное чтение» badge on a done chip with low confidence", async () => {
+        const user = userEvent.setup();
+        vi.mocked(uploadScan).mockResolvedValue({
+            ...scanDone,
+            metadata: {...scanDone.metadata, confidence: "low"},
+        });
+
+        renderChat();
+        await screen.findByText("Ивановы из Одессы");
+
+        await user.upload(
+            screen.getByLabelText("Файл скана"),
+            new File(["scan"], "metrika.jpg", {type: "image/jpeg"}),
+        );
+
+        expect(await screen.findByText("Готово")).toBeInTheDocument();
+        expect(screen.getByText("неуверенное чтение")).toBeInTheDocument();
+    });
 });

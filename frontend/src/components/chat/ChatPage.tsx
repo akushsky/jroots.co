@@ -171,12 +171,17 @@ export default function ChatPage() {
             try {
                 const result = await uploadScan(sessionId, file);
                 if (result.status === "done") {
-                    patchAttachment(localId, {status: "done", scanId: result.scan_id});
+                    patchAttachment(localId, {
+                        status: "done",
+                        scanId: result.scan_id,
+                        confidence: result.metadata?.confidence,
+                    });
                     getCredits().then(setCredits).catch(() => {});
                 } else {
+                    // 201 with status:"error" in the body — vision pipeline failed
                     patchAttachment(localId, {
                         status: "error",
-                        errorText: "Не удалось распознать документ — попробуйте скан получше.",
+                        errorText: "Не удалось прочитать документ",
                     });
                 }
             } catch (error) {

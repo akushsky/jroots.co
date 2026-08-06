@@ -1,6 +1,7 @@
 import {useRef, useState} from "react";
 import {AlertTriangle, Check, Loader2, Paperclip, SendHorizonal, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {cn} from "@/lib/utils";
 import {SCAN_ACCEPT, validateScanFile, type ScanAttachment} from "./scans";
 import {useOpenPaywall} from "./PaywallContext";
@@ -64,6 +65,16 @@ function AttachmentChip({attachment, onRemove}: { attachment: ScanAttachment; on
                         <Check className="w-3 h-3" />
                         Готово
                     </span>
+                )}
+                {attachment.status === "done" && attachment.confidence === "low" && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className="inline-flex items-center self-start text-[10px] text-amber-700 bg-amber-500/10 border border-amber-500/40 rounded-full px-1.5 py-0.5 cursor-help">
+                                неуверенное чтение
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent>документ прочитан частично, проверьте транскрипцию</TooltipContent>
+                    </Tooltip>
                 )}
                 {attachment.status === "error" && attachment.errorText && (
                     <span className="text-[10px] text-destructive leading-tight">{attachment.errorText}</span>

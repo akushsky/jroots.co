@@ -77,6 +77,8 @@ export interface ScanMetadata {
     names: string[];
     dates: string[];
     place: string;
+    /** "low" → best-effort OCR, the UI shows a «неуверенное чтение» badge. */
+    confidence?: string;
 }
 
 export interface ScanUploadResult {
