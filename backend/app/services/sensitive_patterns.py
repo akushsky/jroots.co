@@ -222,8 +222,17 @@ IDENT_LIST_RE = re.compile(
 )
 
 # Bare numeric record ids: 5+ digits after an id-ish marker («id 91952313»,
-# «№ 21166950», «номер записи 20801411»). Years (4 digits) never match.
+# «№ 21166950», «номер записи 20801411», «record IDs: 2489, 2486»). Years
+# (4 digits) never match.
 NUMERIC_ID_RE = re.compile(
-    r"(?:id|ID|№|номер(?:\s+записи)?)\s*[:№]?\s*\d{5,}\b",
+    r"(?:id|ID|ids|IDs|record\s+ids?|№|номер)(?:\s+записи)?\s*[:№]?\s*"
+    r"(?:\d{4,}(?!\d)[\s,;]*)+",
     re.IGNORECASE,
+)
+
+# A bare list of 3+ ids («2489, 2486, 2493, 13368») with no keyword at all.
+# 4+ digits per item; excluded when followed by год-words (year lists like
+# «1889, 1890, 1891 годы» stay).
+ID_LIST_RE = re.compile(
+    r"(?<!\d)\d{4,}(?:,\s*\d{4,}){2,}(?!\d)(?![\s,;]*(?:год|гг\.?|годы|года))"
 )
