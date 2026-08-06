@@ -22,8 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import ToolCallLog
+from app.services.stream_redactor import redact_text as _redact_whole_text
 
 logger = logging.getLogger("jroots")
+
+# Whole URL token in a tool result — swapped for an opaque ref:N handle in
+# teaser tier (see McpArchiveClient._sanitize_result_text).
+_URL_TOKEN_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# A ref:N handle previously issued by this client (used to resolve back).
+_REF_HANDLE_RE = re.compile(r"\bref:(\d+)\b")
 
 try:  # mcp >= 2.0
     from mcp.shared.exceptions import MCPError
@@ -244,6 +252,7 @@ class McpArchiveClient:
         max_calls: int = 15,
         rate_limit_interval: float = 1.0,
         db: AsyncSession | None = None,
+        teaser: bool = False,
     ) -> None:
         self._transport = transport
         self.session_id = session_id
@@ -264,6 +273,12 @@ class McpArchiveClient:
         # journal must serialize its writes or concurrent commits corrupt
         # each other (UniqueViolationError → poisoned transaction).
         self._journal_lock = asyncio.Lock()
+        # Teaser tier: tool results are sanitized before the model sees them
+        # (ciphers masked, URLs swapped for opaque ref:N handles resolved
+        # back server-side) — the model cannot leak what it never saw.
+        self._teaser = teaser
+        self._ref_map: dict[str, str] = {}
+        self._ref_counter = 0
 
     async def open(self) -> None:
         """Connect and fetch the whitelisted tool schemas (OpenAI format)."""
@@ -334,15 +349,22 @@ class McpArchiveClient:
         database = arguments.get("database") if isinstance(arguments, dict) else None
         await self._throttle(str(database) if database else name)
 
+        # Teaser tier: resolve opaque ref:N handles back to real URLs before
+        # hitting the gateway (the model never sees the real ones).
+        resolved_arguments = self._resolve_refs(arguments)
+
         started = time.monotonic()
-        result = await self._call_with_retry(name, arguments)
+        result = await self._call_with_retry(name, resolved_arguments)
         latency_ms = int((time.monotonic() - started) * 1000)
 
         self.calls_used += 1
-        is_error = result.is_error or result.text.lstrip().startswith("Error:")
+        # Teaser tier: the model gets the sanitized text (ciphers masked,
+        # URLs swapped for ref:N handles) — it cannot leak what it never saw.
+        text = self._sanitize_result_text(result.text)
+        is_error = result.is_error or text.lstrip().startswith("Error:")
         result_count: int | None = None
         if name == "search":
-            result_count = 0 if is_error else estimate_result_count(result.text)
+            result_count = 0 if is_error else estimate_result_count(text)
             if result_count > 0:
                 self.searches_with_results += 1
             else:
@@ -365,7 +387,7 @@ class McpArchiveClient:
             self.user_id,
             name,
             database,
-            json.dumps(arguments, ensure_ascii=False),
+            json.dumps(resolved_arguments, ensure_ascii=False),
             result_count,
             latency_ms,
             is_error,
@@ -377,9 +399,58 @@ class McpArchiveClient:
             results_count=result_count,
             latency_ms=latency_ms,
             status="error" if is_error else "ok",
-            error=result.text if is_error else None,
+            error=text if is_error else None,
         )
-        return result.text or EMPTY_RESULT_MESSAGE
+        return text or EMPTY_RESULT_MESSAGE
+
+    def _resolve_refs(self, arguments: Any) -> Any:
+        """Swap opaque ref:N handles in arguments back to the real URLs.
+
+        Teaser tier only: the model drills down with handles it got from
+        sanitized results; the gateway always gets the real values. Runs
+        recursively over dicts/lists; unknown handles pass through verbatim
+        (the gateway answers with its own error for those).
+        """
+        if not self._teaser or not self._ref_map:
+            return arguments
+
+        def _resolve(value: Any) -> Any:
+            if isinstance(value, str):
+                return _REF_HANDLE_RE.sub(
+                    lambda m: self._ref_map.get(m.group(0), m.group(0)), value
+                )
+            if isinstance(value, dict):
+                return {k: _resolve(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [_resolve(v) for v in value]
+            return value
+
+        return _resolve(arguments)
+
+    def _sanitize_result_text(self, text: str) -> str:
+        """Redact a tool result before the model sees it (teaser tier only).
+
+        URLs become opaque ref:N handles (registered in this client's ref map
+        so _resolve_refs can swap them back); every cipher family is masked
+        whole-text — no streaming boundary issues here. Names, dates, result
+        counters and archive/place names stay: the model needs them for
+        identity work, and they are the teaser's selling part.
+        """
+        if not self._teaser or not text:
+            return text
+
+        def _handle(match: re.Match) -> str:
+            url = match.group(0)
+            for handle, known in self._ref_map.items():
+                if known == url:
+                    return handle
+            self._ref_counter += 1
+            handle = f"ref:{self._ref_counter}"
+            self._ref_map[handle] = url
+            return handle
+
+        masked = _URL_TOKEN_RE.sub(_handle, text)
+        return _redact_whole_text(masked)
 
     async def _journal(
         self,
@@ -475,6 +546,7 @@ def build_mcp_client(
     user_id: int,
     initial_used: int = 0,
     db: AsyncSession | None = None,
+    teaser: bool = False,
 ) -> McpArchiveClient:
     """Production factory: real streamable-HTTP transport from settings.
 
@@ -495,4 +567,5 @@ def build_mcp_client(
         max_calls=settings.mcp_tool_call_cap,
         rate_limit_interval=settings.mcp_rate_limit_per_db_seconds,
         db=db,
+        teaser=teaser,
     )

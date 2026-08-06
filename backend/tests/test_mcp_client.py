@@ -82,6 +82,99 @@ async def test_open_maps_whitelisted_tools_to_openai_format():
         assert tool["function"]["description"]
 
 
+async def test_teaser_sanitizes_result_urls_and_ciphers():
+    """Teaser tier: the model never sees real URLs or ciphers."""
+    transport = FakeTransport(
+        script=[
+            McpCallResult(
+                text=(
+                    "Найдено: Клебанов Мордух Копелевич, 1913-1991, Самара.\n"
+                    "URL: https://toldot.com/life/cemetery/graves_97636.html\n"
+                    "Шифр: ЦДІАК/W/1164/1/423, фонд 1164 опись 1 дело 415"
+                )
+            ),
+        ]
+    )
+    client = _client(transport, teaser=True)
+    await client.open()
+    text = await client.call(
+        "search", {"database": "toldot_cemetery", "last_name": "Клебанов"}
+    )
+
+    assert "toldot.com" not in text
+    assert "1164" not in text
+    assert "Клебанов Мордух Копелевич" in text  # names stay (identity work)
+    assert "ref:1" in text
+
+
+async def test_teaser_resolves_ref_handle_back_to_url():
+    """get_record with a ref:N handle goes to the gateway with the real URL."""
+    transport = FakeTransport(
+        script=[
+            McpCallResult(
+                text="Запись: https://toldot.com/life/cemetery/graves_97636.html"
+            ),
+            McpCallResult(text="Полная запись о Клебанове"),
+        ]
+    )
+    client = _client(transport, teaser=True)
+    await client.open()
+    result_text = await client.call("search", {"database": "toldot_cemetery"})
+    assert "ref:1" in result_text
+
+    await client.call(
+        "get_record", {"database": "toldot_cemetery", "record_id": "ref:1"}
+    )
+
+    last_call = transport.calls[-1]
+    assert (
+        last_call[1]["record_id"]
+        == "https://toldot.com/life/cemetery/graves_97636.html"
+    )
+
+
+async def test_teaser_refs_resolve_inside_extras():
+    """Ref handles nested in extras/dicts resolve recursively."""
+    transport = FakeTransport(
+        script=[
+            McpCallResult(
+                text="Form Action: https://www.jewishgen.org/databases/jgdetail_2.php"
+            ),
+            McpCallResult(text="Записи коллекции"),
+        ]
+    )
+    client = _client(transport, teaser=True)
+    await client.open()
+    await client.call("search", {"database": "jewishgen"})
+    await client.call(
+        "get_record",
+        {
+            "database": "jewishgen",
+            "record_id": "detail",
+            "extras": {"form_action": "ref:1", "form_params": {"srch1": "Goldberg"}},
+        },
+    )
+
+    extras = transport.calls[-1][1]["extras"]
+    assert extras["form_action"] == "https://www.jewishgen.org/databases/jgdetail_2.php"
+    assert extras["form_params"] == {"srch1": "Goldberg"}
+
+
+async def test_full_tier_passes_results_untouched():
+    """Full tier: no sanitization, no ref handles."""
+    transport = FakeTransport(
+        script=[
+            McpCallResult(text="URL: https://toldot.com/x.html шифр ЦДІАК/W/1164/1/423")
+        ]
+    )
+    client = _client(transport, teaser=False)
+    await client.open()
+    text = await client.call("search", {"database": "toldot_cemetery"})
+
+    assert "https://toldot.com/x.html" in text
+    assert "1164" in text
+
+
 async def test_open_connect_failure_raises_unavailable():
     client = _client(FakeTransport(connect_error=ConnectionError("refused")))
     with pytest.raises(McpUnavailableError):

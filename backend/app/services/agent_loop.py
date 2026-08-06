@@ -45,7 +45,7 @@ from app.services.credits import InsufficientCredits
 from app.services.mcp_client import McpArchiveClient, McpUnavailableError
 from app.services.prompts import SYSTEM_PROMPT
 from app.services.records_stream import RecordsBlockStream
-from app.services.stream_redactor import StreamRedactor
+from app.services.stream_redactor import StreamRedactor, redact_text as _redact_whole
 
 logger = logging.getLogger("jroots")
 
@@ -132,6 +132,7 @@ async def run_agent_cycle(
         user_id=session.user_id,
         initial_used=initial_tool_calls,
         db=db,
+        teaser=session.is_free,
     )
 
     try:
@@ -244,7 +245,15 @@ async def run_agent_cycle(
     # sees via _build_messages what was searched where and with what outcome.
     # Not streamed — machine-facing context only.
     searchlog = await _build_searchlog(db, session.id)
-    persisted_text = final_text + searchlog
+    if session.is_free:
+        # Final whole-text safety pass: streaming redaction can miss a cipher
+        # whose context left the buffer («фонд ЦДІАК» in one delta, bare
+        # «1164/1/534» in the next); a persist-bound text has no such excuse.
+        # The searchlog lines are tool metadata, not user-facing content, so
+        # they pass through untouched (database names are not ciphers).
+        persisted_text = _redact_whole(final_text) + searchlog
+    else:
+        persisted_text = final_text + searchlog
 
     # 5. Successful cycle. A cycle without real MCP work (small talk,
     # clarifying answers) is free: no search journal row, no charge.

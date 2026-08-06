@@ -75,6 +75,34 @@ SLASH_CIPHER_RE = re.compile(
     r"(?:/[\w.-]*\d[\w.-]*){2,}"
 )
 
+# Archive word (all-caps acronym) + numbers in slash notation, with a space
+# or slash separator: «ЦДІАК 1164/1», «ГАБО Р-585/1/12», «ЦДІАК/1164/1»,
+# «фонд ЦДІАК 1164/1». Group 1 is the optional keyword (kept for
+# readability), group 2 the archive code (also kept — it is not sensitive);
+# only the numbers are masked. The all-caps requirement keeps Capitalized
+# prose words («Всего 12/34») out of the match; the keyword is matched
+# case-insensitively via an inline flag.
+ARCHIVE_FOND_SLASH_RE = re.compile(
+    r"((?i:фонд[ауе]?|опис[ьи])\s*\**\s*)?"
+    r"([A-ZА-ЯЁІЇЄҐ][A-ZА-ЯЁІЇЄҐ0-9.-]*)"
+    r"[ /][A-Za-zА-Яа-яЁёІіЇїЄєҐґ]?-?\d+"
+    r"(?:/\d{1,3})+(?!\d)"
+)
+
+# Bare long slash notation with no labels at all: «1164/1», «1164/1/534»,
+# «1893/196». Segment lengths (3+ then 1-3 digits) deliberately exclude
+# year ranges like «1889/1890». In the stream redactor this only applies on
+# lines with archive context (see ARCHIVE_CONTEXT_* below); the final
+# persist pass and tool-result sanitation apply it unconditionally.
+BARE_SLASH_SEQ_RE = re.compile(r"(?<!\d)\d{3,}(?:/\d{1,3})+(?!\d)")
+
+# Archive context markers for BARE_SLASH_SEQ_RE in prose: a keyword or an
+# all-caps archive acronym (3+ letters) on the same line.
+ARCHIVE_CONTEXT_WORD_RE = re.compile(
+    r"фонд|опис|дел[ао]\b|запис|шифр|лист|могил|квадрат", re.IGNORECASE
+)
+ARCHIVE_ACRONYM_RE = re.compile(r"[A-ZА-ЯЁІЇЄҐ]{3,}")
+
 # A cipher sequence: one or more «ф./оп./д./л. <num>» components with their
 # trailing separators, e.g. «ф. 585 оп. 1 д. 23» or «оп.1, д.5». «л.» (лист)
 # is included on top of the detector set — a sheet number without fond/opis
@@ -117,15 +145,6 @@ LONG_CIPHER_SEQ_RE = re.compile(
     r"(?:(?:фонд|опись|дело|деле|запись|ед\.?\s*хранения)\s*№?\s*"
     r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\d+[A-Za-zА-Яа-я]?"
     r"(?:[-–—/]\d+[A-Za-zА-Яа-я]?)?[\s,;]*)+",
-    re.IGNORECASE,
-)
-
-# «фонд ЦДІАК 1164/1» — archive code with fond/opis in slash notation without
-# component labels. The keyword («фонд»/«опись») is kept for readability,
-# only the identifier is masked.
-ARCHIVE_FOND_SLASH_RE = re.compile(
-    r"((?:фонд[ауе]?|опис[ьи]))\s*\**\s*[A-Za-zА-Яа-яЁёІіЇїЄєҐґ-]*\s*\**\s*"
-    r"\d{2,}(?:/\d+[A-Za-zА-Яа-я]?)+\**",
     re.IGNORECASE,
 )
 

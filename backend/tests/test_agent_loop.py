@@ -116,7 +116,7 @@ def fake_mcp(monkeypatch):
     def install(transport, max_calls=15):
         holder = {}
 
-        def factory(*, session_id, user_id, initial_used=0, db=None):
+        def factory(*, session_id, user_id, initial_used=0, db=None, teaser=False):
             client = McpArchiveClient(
                 transport,
                 session_id=session_id,
@@ -125,6 +125,7 @@ def fake_mcp(monkeypatch):
                 max_calls=max_calls,
                 rate_limit_interval=0,
                 db=db,
+                teaser=teaser,
             )
             holder["client"] = client
             return client
