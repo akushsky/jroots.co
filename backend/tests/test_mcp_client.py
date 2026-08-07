@@ -194,14 +194,40 @@ async def test_call_cap_returns_limit_message_and_stops_transport():
     assert len(transport.calls) == 2
 
 
-async def test_cap_is_cumulative_from_initial_used():
+async def test_cap_is_per_cycle_despite_initial_used():
+    """initial_used only seeds the journal counter; the cap is per cycle."""
     transport = FakeTransport()
-    client = _client(transport, max_calls=15, initial_used=14, rate_limit_interval=0)
+    client = _client(transport, max_calls=2, initial_used=14, rate_limit_interval=0)
     await client.open()
 
     assert await client.call("list_databases", {}) == "ok"
+    assert await client.call("list_databases", {}) == "ok"
     assert await client.call("list_databases", {}) == TOOL_CALL_LIMIT_MESSAGE
-    assert len(transport.calls) == 1
+    assert len(transport.calls) == 2
+
+
+async def test_cap_resets_on_next_cycle():
+    """Turn 1 exhausts the cap; turn 2 (new client seeded with the cumulative
+    counter) gets a full fresh cap."""
+    transport1 = FakeTransport()
+    client1 = _client(transport1, max_calls=2, rate_limit_interval=0)
+    await client1.open()
+    assert await client1.call("list_databases", {}) == "ok"
+    assert await client1.call("list_databases", {}) == "ok"
+    assert await client1.call("list_databases", {}) == TOOL_CALL_LIMIT_MESSAGE
+    assert len(transport1.calls) == 2
+
+    transport2 = FakeTransport()
+    client2 = _client(
+        transport2, max_calls=2, initial_used=client1.calls_used, rate_limit_interval=0
+    )
+    await client2.open()
+    assert await client2.call("list_databases", {}) == "ok"
+    assert await client2.call("list_databases", {}) == "ok"
+    assert await client2.call("list_databases", {}) == TOOL_CALL_LIMIT_MESSAGE
+    assert len(transport2.calls) == 2
+    # Cumulative counter kept running for the journal's per-cycle delta.
+    assert client2.calls_used == 4
 
 
 async def test_non_whitelisted_tool_never_reaches_transport():

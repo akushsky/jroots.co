@@ -270,7 +270,13 @@ class McpArchiveClient:
         self.user_id = user_id
         self.max_calls = max_calls
         self.rate_limit_interval = rate_limit_interval
-        # Cumulative across the whole chat session (all user messages).
+        # The call cap is per agentic cycle (one user message), NOT cumulative
+        # per chat session — a multi-turn session would otherwise exhaust the
+        # cap on turn one and block every later search (session-107 incident:
+        # the user said "воевали" twice and the agent could only summarize).
+        # calls_used starts at initial_used only so the journal can compute
+        # the per-cycle delta for session statistics.
+        self._initial_used = initial_used
         self.calls_used = initial_used
         self.call_log: list[ToolCallRecord] = []
         self.searches_with_results = 0
@@ -339,7 +345,7 @@ class McpArchiveClient:
                 error=f"tool '{name}' is not whitelisted for the chat",
             )
             return TOOL_UNKNOWN_MESSAGE.format(name=name)
-        if self.calls_used >= self.max_calls:
+        if self.calls_used - self._initial_used >= self.max_calls:
             logger.info(
                 "MCP tool cap reached: session=%d user=%d used=%d cap=%d",
                 self.session_id,
