@@ -1,5 +1,9 @@
 # Beta stack for chat.jroots.co (Coolify): separate DB, invite-only, Gemini + MCP.
 # Secrets and most env vars come from the Coolify UI — do not commit .env.beta.
+#
+# Networking: project-local `chat_internal` for frontend→backend→db so we do not
+# collide with prod's `backend` hostname on the shared `coolify` network. Backend
+# also joins `coolify` as `jroots-chat-backend` to reach `jroots-mcp`.
 
 services:
   db:
@@ -15,7 +19,7 @@ services:
     volumes:
       - beta-db-data:/var/lib/postgresql/data
     networks:
-      - coolify
+      - chat_internal
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jroots} -d ${POSTGRES_DB:-jroots_beta}"]
@@ -55,7 +59,12 @@ services:
       db:
         condition: service_healthy
     networks:
-      - coolify
+      chat_internal:
+        aliases:
+          - jroots-chat-backend
+      coolify:
+        aliases:
+          - jroots-chat-backend
     restart: unless-stopped
     deploy:
       resources:
@@ -76,10 +85,12 @@ services:
       args:
         CDN_BASE: ${CDN_BASE:-/}
         VITE_REGISTRATION_ENABLED: ${VITE_REGISTRATION_ENABLED:-false}
+        NGINX_CONF: nginx.beta.conf
     depends_on:
       backend:
         condition: service_healthy
     networks:
+      - chat_internal
       - coolify
     restart: unless-stopped
     deploy:
@@ -89,6 +100,7 @@ services:
           memory: 256M
 
 networks:
+  chat_internal:
   coolify:
     external: true
 
