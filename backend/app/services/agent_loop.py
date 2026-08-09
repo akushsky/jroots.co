@@ -38,11 +38,16 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models import ChatMessage, ChatSession, Search, ToolCallLog
 from app.services import credits, llm_router, scan_pipeline
 from app.services import mcp_client as mcp_client_module
 from app.services.credits import InsufficientCredits
-from app.services.mcp_client import McpArchiveClient, McpUnavailableError
+from app.services.mcp_client import (
+    McpArchiveClient,
+    McpUnavailableError,
+    estimate_result_count,
+)
 from app.services.prompts import SYSTEM_PROMPT
 from app.services.records_stream import RecordsBlockStream
 from app.services.stream_redactor import StreamRedactor, redact_text as _redact_whole
@@ -157,6 +162,13 @@ async def run_agent_cycle(
         model = llm_router.select_model({})
         generations = estimate_generations(user_content)
         final_answer_produced = False
+        # Token diet: one-line digests keyed by tool_call_id, plus per-round
+        # indexes of tool messages in `messages` so older results can be
+        # collapsed after agent_collapse_after_rounds.
+        digests: dict[str, str] = {}
+        tool_rounds: list[list[int]] = []
+        collapsed: set[str] = set()
+        settings = get_settings()
 
         try:
             for _round in range(MAX_AGENT_ROUNDS):
@@ -168,7 +180,7 @@ async def run_agent_cycle(
                 )
                 round_raw: list[str] = []
                 round_visible: list[str] = []
-                tool_calls: list[dict[str, str]] = []
+                tool_calls: list[dict[str, Any]] = []
 
                 def _collect(kind: str, text: str) -> None:
                     """Records tables are tier-safe by construction; prose
@@ -218,8 +230,23 @@ async def run_agent_cycle(
                     yield "step", {"text": step_text}
                     visible_parts.append(f"<steps>{step_text}</steps>")
                 messages.append(_assistant_tool_message(round_raw, tool_calls))
-                tool_messages = await _execute_tools(client, tool_calls)
+                tool_messages, round_digests = await _execute_tools(
+                    client, tool_calls
+                )
+                digests.update(round_digests)
+                round_indexes = list(
+                    range(len(messages), len(messages) + len(tool_messages))
+                )
                 messages.extend(tool_messages)
+                tool_rounds.append(round_indexes)
+                _collapse_old_tool_results(
+                    messages,
+                    tool_rounds,
+                    digests,
+                    collapsed,
+                    after_rounds=settings.agent_collapse_after_rounds,
+                    keep_rounds=settings.agent_collapse_keep_rounds,
+                )
             else:
                 logger.warning(
                     "Agent hit the round cap (%d) in session %d",
@@ -361,45 +388,93 @@ async def run_agent_cycle(
 
 
 def _assistant_tool_message(
-    round_text: list[str], tool_calls: list[dict[str, str]]
+    round_text: list[str], tool_calls: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """OpenAI-format assistant message carrying the requested tool calls."""
+    """OpenAI-format assistant message carrying the requested tool calls.
+
+    Echoes provider-specific ``extra_content`` (Gemini thought_signature) so
+    the next completion round is accepted — without it Gemini 3 returns 400.
+    """
+    emitted: list[dict[str, Any]] = []
+    for index, call in enumerate(tool_calls):
+        entry: dict[str, Any] = {
+            "id": call.get("id") or f"call_{index}",
+            "type": "function",
+            "function": {
+                "name": call["name"],
+                "arguments": call["arguments"],
+            },
+        }
+        if call.get("extra_content") is not None:
+            entry["extra_content"] = call["extra_content"]
+        emitted.append(entry)
     return {
         "role": "assistant",
         "content": "".join(round_text) or None,
-        "tool_calls": [
-            {
-                "id": call["id"] or f"call_{index}",
-                "type": "function",
-                "function": {"name": call["name"], "arguments": call["arguments"]},
-            }
-            for index, call in enumerate(tool_calls)
-        ],
+        "tool_calls": emitted,
     }
 
 
+def _collapse_old_tool_results(
+    messages: list[dict[str, Any]],
+    tool_rounds: list[list[int]],
+    digests: dict[str, str],
+    collapsed: set[str],
+    *,
+    after_rounds: int,
+    keep_rounds: int,
+) -> None:
+    """Replace tool-result bodies older than the last keep_rounds with digests.
+
+    Runs only once the cycle has reached ``after_rounds`` tool rounds. Assistant
+    reasoning messages are left untouched — scope is tool content only.
+    """
+    if len(tool_rounds) < after_rounds or keep_rounds < 0:
+        return
+    if keep_rounds == 0:
+        stale_rounds = tool_rounds
+    else:
+        stale_rounds = tool_rounds[:-keep_rounds]
+    for indexes in stale_rounds:
+        for idx in indexes:
+            msg = messages[idx]
+            if msg.get("role") != "tool":
+                continue
+            call_id = msg.get("tool_call_id")
+            if not call_id or call_id in collapsed:
+                continue
+            digest = digests.get(call_id)
+            if digest is None:
+                continue
+            msg["content"] = digest
+            collapsed.add(call_id)
+
+
 async def _execute_tools(
-    client: McpArchiveClient, tool_calls: list[dict[str, str]]
-) -> list[dict[str, Any]]:
+    client: McpArchiveClient, tool_calls: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Run the requested tool calls (independent ones in parallel) and
-    return the OpenAI-format tool result messages."""
+    return (OpenAI-format tool messages, digests keyed by tool_call_id)."""
     results = await asyncio.gather(
         *(_execute_one_tool(client, call) for call in tool_calls),
         return_exceptions=True,
     )
     tool_messages: list[dict[str, Any]] = []
+    digests: dict[str, str] = {}
     for result in results:
         if isinstance(result, McpUnavailableError):
             raise result
         if isinstance(result, Exception):
             raise result
-        tool_messages.append(result)
-    return tool_messages
+        message, digest = result
+        tool_messages.append(message)
+        digests[message["tool_call_id"]] = digest
+    return tool_messages, digests
 
 
 async def _execute_one_tool(
-    client: McpArchiveClient, call: dict[str, str]
-) -> dict[str, Any]:
+    client: McpArchiveClient, call: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     call_id = call["id"]
     try:
         arguments = json.loads(call["arguments"] or "{}")
@@ -411,14 +486,42 @@ async def _execute_one_tool(
             call["name"],
             call["arguments"],
         )
-        return {
-            "role": "tool",
-            "tool_call_id": call_id,
-            "content": "Error: невалидные аргументы инструмента "
-            "(ожидается JSON-объект).",
-        }
+        text = (
+            "Error: невалидные аргументы инструмента "
+            "(ожидается JSON-объект)."
+        )
+        digest = format_tool_digest(
+            call["name"], None, {}, status="error", results_count=None
+        )
+        return {"role": "tool", "tool_call_id": call_id, "content": text}, digest
     text = await client.call(call["name"], arguments)
-    return {"role": "tool", "tool_call_id": call_id, "content": text}
+    digest = _digest_from_call(call["name"], arguments, text)
+    return {"role": "tool", "tool_call_id": call_id, "content": text}, digest
+
+
+def _digest_from_call(name: str, arguments: dict[str, Any], text: str) -> str:
+    """Build a searchlog-shaped one-liner for in-cycle history collapse."""
+    is_error = text.lstrip().startswith("Error:")
+    if text == mcp_client_module.TOOL_CALL_LIMIT_MESSAGE:
+        status = "cap_blocked"
+        results_count = None
+    elif is_error:
+        status = "error"
+        results_count = 0 if name == "search" else None
+    elif name == "search":
+        status = "ok"
+        results_count = estimate_result_count(text)
+    else:
+        status = "ok"
+        results_count = None
+    database = arguments.get("database") if isinstance(arguments, dict) else None
+    return format_tool_digest(
+        name,
+        str(database) if database is not None else None,
+        arguments if isinstance(arguments, dict) else {},
+        status=status,
+        results_count=results_count,
+    )
 
 
 async def _paywall_events(
@@ -472,23 +575,44 @@ _STATUS_OUTCOME = {
 }
 
 
-def _format_searchlog_line(row: ToolCallLog) -> str:
-    """One dense line: «search(gabo: Фалькович Шмуил 1890) → 2 результатов»."""
-    args = row.args_json or {}
+def format_tool_digest(
+    tool: str,
+    database: str | None,
+    args: dict[str, Any] | None,
+    *,
+    status: str = "ok",
+    results_count: int | None = None,
+) -> str:
+    """One dense line: «search(gabo: Фалькович Шмуил 1890) → 2 результатов».
+
+    Shared by the persisted <searchlog> and in-cycle history collapse so the
+    model sees the same shape whether the detail was just compacted or came
+    from a prior turn.
+    """
+    args = args or {}
     summary = " ".join(
         str(args[key]) for key in _SEARCHLOG_ARG_KEYS if args.get(key) is not None
     )
-    target = row.database or ""
+    target = database or ""
     if summary:
         target = f"{target}: {summary}" if target else summary
-    outcome = _STATUS_OUTCOME.get(row.status)
+    outcome = _STATUS_OUTCOME.get(status)
     if outcome is None:
         outcome = (
-            f"{row.results_count} результатов"
-            if row.results_count is not None
-            else "ok"
+            f"{results_count} результатов" if results_count is not None else "ok"
         )
-    return f"{row.tool}({target}) → {outcome}"
+    return f"{tool}({target}) → {outcome}"
+
+
+def _format_searchlog_line(row: ToolCallLog) -> str:
+    """One dense line from a persisted tool_call_logs row."""
+    return format_tool_digest(
+        row.tool,
+        row.database,
+        row.args_json if isinstance(row.args_json, dict) else {},
+        status=row.status,
+        results_count=row.results_count,
+    )
 
 
 async def _build_searchlog(db: AsyncSession, session_id: int) -> str:

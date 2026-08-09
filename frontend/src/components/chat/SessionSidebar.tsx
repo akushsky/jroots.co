@@ -22,8 +22,8 @@ function formatDate(iso: string): string {
 export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: SessionSidebarProps) {
     return (
         <div className="flex flex-col h-full min-w-0 overflow-hidden">
-            <div className="p-3 border-b border-border flex items-center gap-2 min-w-0">
-                <Button onClick={onNew} variant="outline" className="flex-1 min-w-0">
+            <div className="min-h-14 px-3 py-2.5 border-b border-border flex items-center gap-2 min-w-0">
+                <Button onClick={onNew} variant="outline" size="sm" className="flex-1 min-w-0">
                     <MessageSquarePlus />
                     <span className="truncate">Новый поиск</span>
                 </Button>
@@ -44,21 +44,16 @@ export function SessionSidebar({sessions, activeId, onSelect, onNew, onClose}: S
                         key={session.id}
                         onClick={() => onSelect(session.id)}
                         className={cn(
-                            "block w-full min-w-0 overflow-hidden text-left rounded-md px-3 py-2 text-sm transition-colors",
+                            "block w-full min-w-0 overflow-hidden text-left rounded-md border-l-2 px-2.5 py-2 text-sm transition-colors",
                             session.id === activeId
-                                ? "bg-accent text-accent-foreground"
-                                : "hover:bg-muted",
+                                ? "border-accent bg-secondary text-foreground"
+                                : "border-transparent text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                         )}
                     >
                         <span className="block truncate font-medium">
                             {sessionDisplayTitle(session)}
                         </span>
-                        <span
-                            className={cn(
-                                "block truncate text-xs mt-0.5",
-                                session.id === activeId ? "text-accent-foreground/70" : "text-muted-foreground",
-                            )}
-                        >
+                        <span className="block truncate text-xs mt-0.5 text-muted-foreground">
                             {formatDate(session.created_at)}
                         </span>
                     </button>

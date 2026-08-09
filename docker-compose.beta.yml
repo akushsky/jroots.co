@@ -1,0 +1,94 @@
+# Beta stack for chat.jroots.co (Coolify): separate DB, invite-only, Gemini + MCP.
+# Secrets and most env vars come from the Coolify UI — do not commit .env.beta.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jroots}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-jroots_beta}
+    volumes:
+      - beta-db-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - coolify
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jroots} -d ${POSTGRES_DB:-jroots_beta}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 2 --bind 0.0.0.0:8000 --timeout 3600
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-jroots}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jroots_beta}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL:-https://chat.jroots.co}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://chat.jroots.co}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-michael.akushsky@gmail.com}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-michael}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      JROOTS_MCP_ENABLED: ${JROOTS_MCP_ENABLED:-true}
+      JROOTS_MCP_URL: ${JROOTS_MCP_URL:-http://jroots-mcp:8100}
+      JROOTS_MCP_TOKEN: ${JROOTS_MCP_TOKEN:-}
+      CDN_BASE: ${CDN_BASE:-}
+      ENVIRONMENT: ${ENVIRONMENT:-beta}
+      MEDIA_PATH: /app/media
+    volumes:
+      - beta-media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - coolify
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        CDN_BASE: ${CDN_BASE:-/}
+        VITE_REGISTRATION_ENABLED: ${VITE_REGISTRATION_ENABLED:-false}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - coolify
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+networks:
+  coolify:
+    external: true
+
+volumes:
+  beta-db-data:
+  beta-media:

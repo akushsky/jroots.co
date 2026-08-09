@@ -1,6 +1,25 @@
 from functools import lru_cache
+from typing import Any, Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+# Per-provider defaults for model ids and USD prices. Applied only when the
+# corresponding field was not set explicitly via env (see apply_provider_profile).
+_PROVIDER_PROFILES: dict[str, dict[str, Any]] = {
+    "moonshot": {
+        "llm_model_main": "kimi-k2.6",
+        "llm_model_escalation": "kimi-k3",
+        "llm_price_in_per_1m": 0.95,
+        "llm_price_out_per_1m": 4.0,
+    },
+    "gemini": {
+        "llm_model_main": "gemini-3.1-pro-preview",
+        "llm_model_escalation": "gemini-3.1-pro-preview",
+        "llm_price_in_per_1m": 2.0,
+        "llm_price_out_per_1m": 12.0,
+    },
+}
 
 
 class Settings(BaseSettings):
@@ -10,6 +29,11 @@ class Settings(BaseSettings):
     database_url: str
     cors_origins: str = "http://localhost:5173"
     frontend_url: str = "http://localhost:5173"
+    # Invite-only beta: set REGISTRATION_ENABLED=false to reject POST /api/register.
+    registration_enabled: bool = True
+    # Optional seed on startup (entrypoint): create/promote a verified admin.
+    bootstrap_admin_email: str = ""
+    bootstrap_admin_username: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     hcaptcha_secret_key: str = ""
@@ -23,8 +47,18 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     cdn_base: str = ""
 
+    # LLM provider toggle: "gemini" | "moonshot". One env var switches the
+    # whole stack; model ids and prices fall back to the provider profile
+    # unless overridden explicitly.
+    llm_provider: str = "gemini"
     moonshot_api_key: str = ""
     moonshot_base_url: str = "https://api.moonshot.ai/v1"
+    google_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    # Empty = provider default. Gemini accepts "low"/"high"; cuts thinking tokens.
+    llm_reasoning_effort: str = ""
+    # Field defaults match the moonshot profile; apply_provider_profile
+    # rewrites unset ones when llm_provider is gemini (the default).
     llm_model_main: str = "kimi-k2.6"
     llm_model_escalation: str = "kimi-k3"
     llm_token_cap_per_session: int = 200_000
@@ -40,6 +74,12 @@ class Settings(BaseSettings):
     jroots_mcp_timeout_seconds: float = 30.0
     mcp_tool_call_cap: int = 15
     mcp_rate_limit_per_db_seconds: float = 1.0
+    # Token diet: hard cap on tool-result text shown to the model (chars).
+    mcp_tool_result_max_chars: int = 8000
+    # In-cycle history collapse: after this many rounds, tool results older
+    # than the last N rounds are replaced with one-line digests.
+    agent_collapse_after_rounds: int = 4
+    agent_collapse_keep_rounds: int = 2
 
     # Payments (M4): Polar / NOWPayments / YuKassa.
     public_base_url: str = "http://localhost:8000"
@@ -62,6 +102,15 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
+
+    @model_validator(mode="after")
+    def apply_provider_profile(self) -> Self:
+        """Fill model/price fields from the active provider when unset in env."""
+        profile = _PROVIDER_PROFILES.get(self.llm_provider, _PROVIDER_PROFILES["gemini"])
+        for field, value in profile.items():
+            if field not in self.model_fields_set:
+                object.__setattr__(self, field, value)
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

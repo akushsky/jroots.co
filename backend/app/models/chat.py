@@ -78,6 +78,9 @@ class ToolCallLog(Base):
     database = Column(String(128), nullable=True)
     args_json = Column(JSON, nullable=True)
     results_count = Column(Integer, nullable=True)
+    # Length of the text actually shown to the model (post-truncation and
+    # post-sanitize) — token-cost observability per call.
+    result_chars = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=True)
     status = Column(String(16), nullable=False)  # ok | error | cap_blocked
     error = Column(Text, nullable=True)

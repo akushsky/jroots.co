@@ -261,3 +261,25 @@ describe("ChatMessageBubble searchlog", () => {
         expect(screen.getByText("search(a, x) → 0 результатов")).toBeInTheDocument();
     });
 });
+
+describe("ChatMessageBubble records table", () => {
+    it("wraps cells and contains overflow so wide tables do not blow the layout", () => {
+        const table = [
+            "| Тип | Место | Период | Имена | Архив | Шифр | Ссылка |",
+            "|---|---|---|---|---|---|---|",
+            "| военно-учетный документ | г. Сретенск, Сретенский район, Забайкальский край | 1897 | Цоглин Лев Матвеевич | Память народа | ID 93083897 | [открыть](https://example.com) |",
+        ].join("\n");
+
+        const {container} = render(
+            <ChatMessageBubble message={assistantMessage({content: table})} />,
+        );
+
+        const wrap = container.querySelector("table")?.parentElement;
+        expect(wrap).toHaveClass("overflow-x-auto");
+        expect(wrap).toHaveClass("max-w-full");
+        expect(container.querySelector("th")).not.toHaveClass("whitespace-nowrap");
+        expect(container.querySelector("td")).toHaveClass("break-words");
+        // Assistant bubble uses the full reading column (tables need the room).
+        expect(container.firstElementChild?.firstElementChild).toHaveClass("w-full");
+    });
+});

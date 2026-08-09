@@ -7,6 +7,7 @@ import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {userRegister} from "@/api/api";
+import {BrandMark} from "@/components/shared/BrandMark";
 import {StatusMessage} from "@/components/shared/StatusMessage";
 
 /** Best-effort visitor fingerprint; registration never blocks on it. */
@@ -74,15 +75,10 @@ export default function RegisterForm() {
     }
 
     return (
-        <div className="max-w-md mx-auto mt-16">
+        <div className="max-w-md mx-auto mt-10 px-4">
+            <BrandMark className="mb-6" />
             <Card>
                 <CardContent className="p-6 space-y-4">
-                    <div className="text-center">
-                        <Link to="/" className="text-sm font-medium text-accent hover:underline">
-                            &larr; На главную
-                        </Link>
-                    </div>
-
                     <h2 className="text-xl font-semibold text-center">Регистрация</h2>
                     {successMessage && (
                         <div className="text-center space-y-3 py-4">

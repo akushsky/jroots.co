@@ -14,6 +14,12 @@ os.environ.setdefault("JROOTS_MCP_ENABLED", "false")
 # backend/.env overrides the defaults — pydantic reads .env, but real env
 # vars win.
 os.environ["FREE_SESSIONS_PER_DAY"] = "2"
+# Distinct main/escalation models + fixed Kimi-era prices so vision-escalation
+# and free-tier spend assertions stay stable regardless of LLM_PROVIDER.
+os.environ["LLM_MODEL_MAIN"] = "test-main-model"
+os.environ["LLM_MODEL_ESCALATION"] = "test-escalation-model"
+os.environ["LLM_PRICE_IN_PER_1M"] = "0.95"
+os.environ["LLM_PRICE_OUT_PER_1M"] = "4.0"
 
 import hashlib
 import io

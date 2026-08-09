@@ -322,3 +322,198 @@ async def test_error_after_first_chunk_is_not_retried(scripted_client, no_backof
         )
     assert client.chat.completions.calls == 1
     assert no_backoff == []
+
+
+# --- Gemini OpenAI-compat quirks ---------------------------------------------
+
+
+def _tool_delta(index, call_id=None, name=None, arguments=None, extra_content=None):
+    return SimpleNamespace(
+        index=index,
+        id=call_id,
+        function=SimpleNamespace(name=name, arguments=arguments),
+        extra_content=extra_content,
+    )
+
+
+def _tool_chunk(tool_calls, usage=None):
+    delta = SimpleNamespace(content=None, tool_calls=tool_calls)
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)], usage=usage)
+
+
+def _clear_model_env(monkeypatch):
+    """conftest hard-sets model/price for suite stability — drop them here."""
+    for key in (
+        "LLM_MODEL_MAIN",
+        "LLM_MODEL_ESCALATION",
+        "LLM_PRICE_IN_PER_1M",
+        "LLM_PRICE_OUT_PER_1M",
+        "LLM_PROVIDER",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_provider_profile_fills_gemini_defaults(monkeypatch):
+    from app.config import Settings
+
+    _clear_model_env(monkeypatch)
+    settings = Settings(
+        secret_key="x",
+        admin_password="x",
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_provider="gemini",
+    )
+    assert settings.llm_model_main == "gemini-3.1-pro-preview"
+    assert settings.llm_model_escalation == "gemini-3.1-pro-preview"
+    assert settings.llm_price_in_per_1m == 2.0
+    assert settings.llm_price_out_per_1m == 12.0
+
+
+def test_provider_profile_fills_moonshot_defaults(monkeypatch):
+    from app.config import Settings
+
+    _clear_model_env(monkeypatch)
+    settings = Settings(
+        secret_key="x",
+        admin_password="x",
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_provider="moonshot",
+    )
+    assert settings.llm_model_main == "kimi-k2.6"
+    assert settings.llm_model_escalation == "kimi-k3"
+    assert settings.llm_price_in_per_1m == 0.95
+
+
+def test_provider_profile_keeps_explicit_model_override(monkeypatch):
+    from app.config import Settings
+
+    _clear_model_env(monkeypatch)
+    settings = Settings(
+        secret_key="x",
+        admin_password="x",
+        database_url="sqlite+aiosqlite:///:memory:",
+        llm_provider="gemini",
+        llm_model_main="custom-model",
+    )
+    assert settings.llm_model_main == "custom-model"
+    assert settings.llm_model_escalation == "gemini-3.1-pro-preview"
+
+
+def test_get_llm_client_uses_gemini_credentials(monkeypatch):
+    monkeypatch.setattr(llm_router, "_client", None)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "google_api_key", "gemini-key")
+    monkeypatch.setattr(
+        settings, "gemini_base_url", "https://example.com/v1beta/openai/"
+    )
+    client = llm_router.get_llm_client()
+    assert client.api_key == "gemini-key"
+    assert "example.com/v1beta/openai" in str(client.base_url)
+    monkeypatch.setattr(llm_router, "_client", None)
+
+
+def test_get_llm_client_uses_moonshot_credentials(monkeypatch):
+    monkeypatch.setattr(llm_router, "_client", None)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "moonshot")
+    monkeypatch.setattr(settings, "moonshot_api_key", "moon-key")
+    monkeypatch.setattr(settings, "moonshot_base_url", "https://api.moonshot.ai/v1")
+    client = llm_router.get_llm_client()
+    assert client.api_key == "moon-key"
+    assert "api.moonshot.ai" in str(client.base_url)
+    monkeypatch.setattr(llm_router, "_client", None)
+
+
+async def test_stream_completion_splits_parallel_calls_when_index_none(fake_client):
+    """Gemini omits tool-call index — two id'd deltas must not collapse."""
+    fake_client(
+        [
+            _tool_chunk(
+                [
+                    _tool_delta(
+                        None,
+                        "call_a",
+                        "search",
+                        '{"database":"gabo"}',
+                        extra_content={"google": {"thought_signature": "sig-a"}},
+                    )
+                ]
+            ),
+            _tool_chunk(
+                [
+                    _tool_delta(
+                        None,
+                        "call_b",
+                        "search",
+                        '{"database":"dako"}',
+                        extra_content={"google": {"thought_signature": "sig-b"}},
+                    )
+                ]
+            ),
+            _chunk(
+                usage=SimpleNamespace(
+                    prompt_tokens=10, completion_tokens=4, total_tokens=14
+                )
+            ),
+        ]
+    )
+    items = await _collect(
+        llm_router.stream_completion([{"role": "user", "content": "hi"}], "m", tools=[])
+    )
+    tool_event = next(item for item in items if item["type"] == "tool_calls")
+    assert len(tool_event["tool_calls"]) == 2
+    assert tool_event["tool_calls"][0]["id"] == "call_a"
+    assert tool_event["tool_calls"][1]["id"] == "call_b"
+    assert tool_event["tool_calls"][0]["extra_content"] == {
+        "google": {"thought_signature": "sig-a"}
+    }
+    assert tool_event["tool_calls"][1]["extra_content"] == {
+        "google": {"thought_signature": "sig-b"}
+    }
+
+
+async def test_stream_completion_counts_thinking_tokens_in_usage(fake_client):
+    """Gemini: total >> prompt+completion because thinking is billed as output."""
+    fake_client(
+        [
+            _chunk("ok"),
+            _chunk(
+                usage=SimpleNamespace(
+                    prompt_tokens=87, completion_tokens=33, total_tokens=536
+                )
+            ),
+        ]
+    )
+    items = await _collect(
+        llm_router.stream_completion([{"role": "user", "content": "hi"}], "m")
+    )
+    usage = items[-1]
+    assert usage["prompt_tokens"] == 87
+    assert usage["completion_tokens"] == 536 - 87
+
+
+async def test_stream_completion_passes_reasoning_effort(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_reasoning_effort", "low")
+    captured = {}
+
+    class _Spy:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+
+            async def gen():
+                yield _chunk("ok")
+
+            return gen()
+
+    monkeypatch.setattr(
+        llm_router,
+        "_client",
+        SimpleNamespace(chat=SimpleNamespace(completions=_Spy())),
+    )
+    await _collect(
+        llm_router.stream_completion([{"role": "user", "content": "hi"}], "m")
+    )
+    assert captured.get("reasoning_effort") == "low"
+    monkeypatch.setattr(llm_router, "_client", None)

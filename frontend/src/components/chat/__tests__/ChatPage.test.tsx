@@ -292,6 +292,41 @@ describe("ChatPage", () => {
         expect(input).toHaveValue("Моисей из Невеля");
     });
 
+    it("landing ?q= starts a fresh composer, not the previous session", async () => {
+        const user = userEvent.setup();
+        vi.mocked(createSession).mockResolvedValue({
+            id: "s-new",
+            title: "Новый поиск",
+            created_at: "2026-08-08T12:00:00Z",
+        });
+
+        render(
+            <MemoryRouter initialEntries={["/chat?q=Моисей из Невеля"]}>
+                <ChatPage />
+            </MemoryRouter>,
+        );
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        expect(input).toHaveValue("Моисей из Невеля");
+        // Previous session stays listed in the rail…
+        expect(await screen.findByText("Ивановы из Одессы")).toBeInTheDocument();
+        // …but its history is not loaded into the composer.
+        expect(screen.queryByText("Начните с ревизских сказок")).not.toBeInTheDocument();
+        expect(getSession).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole("button", {name: "Отправить"}));
+
+        await waitFor(() => expect(createSession).toHaveBeenCalled());
+        await waitFor(() =>
+            expect(streamMessage).toHaveBeenCalledWith(
+                "s-new",
+                "Моисей из Невеля",
+                expect.anything(),
+                expect.anything(),
+            ),
+        );
+    });
+
     it("shows «бесплатные сессии закончились» with a tariff CTA on free_sessions_limit", async () => {
         const user = userEvent.setup();
         vi.mocked(createSession).mockRejectedValue({

@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {Link, useNavigate} from "react-router-dom";
-import {Search} from "lucide-react";
+import {Link} from "react-router-dom";
+import {MessagesSquare, Search} from "lucide-react";
 import {AnimatePresence, motion} from "motion/react";
 import {Input} from "@/components/ui/input";
 import {Card, CardContent} from "@/components/ui/card";
@@ -11,9 +11,12 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/c
 import Highlighter from "react-highlight-words";
 import {fetchImage, fetchSources, requestAccess, searchObjects} from "@/api/api";
 import {useAuth} from "@/hooks/useAuth";
+import {AppHeader} from "@/components/shared/AppHeader";
 import {ImagePopup} from "@/components/shared/ImagePopup";
 import {LoadingOverlay} from "@/components/shared/LoadingOverlay";
+import {PageContainer} from "@/components/shared/PageContainer";
 import {Pagination} from "@/components/shared/Pagination";
+import {SuggestionChip} from "@/components/shared/SuggestionChip";
 
 interface ImageSource {
     id: number;
@@ -40,8 +43,7 @@ interface SearchResult {
 const EXAMPLE_SEARCHES = ["Рабинович", "Зильберштейн", "Бердичев", "Житомир"];
 
 export default function SearchPage() {
-    const navigate = useNavigate();
-    const {user, logout} = useAuth();
+    const {user} = useAuth();
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [popupImage, setPopupImage] = useState<string | null>(null);
@@ -131,43 +133,12 @@ export default function SearchPage() {
 
     return (
         <TooltipProvider>
-            <div className="max-w-3xl mx-auto px-4">
-                {/* Header */}
-                <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-                    <div>
-                        <h1 className="text-4xl font-bold tracking-tight">
-                            JRoots
-                        </h1>
-                        <p className="text-muted-foreground mt-1 text-sm">
-                            Поиск по еврейским архивным материалам
-                        </p>
-                    </div>
-                    {user ? (
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                            <div className="text-right leading-tight">
-                                <div className="font-medium text-foreground">{user.username}</div>
-                                <div className="text-xs">{user.email}</div>
-                            </div>
-                            <Button variant="outline" size="sm" onClick={logout}>
-                                Выйти
-                            </Button>
-                        </div>
-                    ) : (
-                        <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => navigate("/login")}>Вход</Button>
-                            <Button size="sm" onClick={() => navigate("/signup")}>Регистрация</Button>
-                        </div>
-                    )}
-                </div>
+            <PageContainer measure="workspace">
+                <AppHeader />
 
-                <div className="border-b border-border mb-6" />
-
-                <div className="mb-6 -mt-2 text-sm">
-                    <Link to="/chat" className="text-accent hover:underline">
-                        Не нашли сами? Спросите ассистента →
-                    </Link>
-                </div>
-
+                {/* Same reading measure as chat answers — shell stays workspace-wide
+                    so the header/tabs don't jump when switching to Ассистент. */}
+                <div className="mx-auto w-full max-w-reading">
                 {/* Search input */}
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
@@ -175,13 +146,13 @@ export default function SearchPage() {
                         placeholder="Введите фамилию, имя или название документа..."
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        className="h-12 text-base pl-11 bg-card"
+                        className="h-12 text-base pl-11 bg-card shadow-xs"
                     />
                 </div>
 
-                {/* Filters */}
-                <div className="mt-3">
-                    <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+                {/* Filters + result count share one row */}
+                <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen} className="mt-3">
+                    <div className="flex items-center justify-between gap-3">
                         <CollapsibleTrigger asChild>
                             <Button variant="outline" size="sm" className="gap-2">
                                 Фильтры
@@ -192,69 +163,81 @@ export default function SearchPage() {
                                 )}
                             </Button>
                         </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-3 p-4 border rounded-lg space-y-4 bg-card">
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium">Архив</label>
-                                <Select
-                                    value={sourceId !== undefined ? String(sourceId) : "all"}
-                                    onValueChange={(v) => setSourceId(v === "all" ? undefined : Number(v))}
+                        {total > 0 && (
+                            <p className="text-sm text-muted-foreground">
+                                {total} {(() => {
+                                    const n = total % 100;
+                                    const d = total % 10;
+                                    if (n >= 11 && n <= 19) return "результатов";
+                                    if (d === 1) return "результат";
+                                    if (d >= 2 && d <= 4) return "результата";
+                                    return "результатов";
+                                })()}
+                            </p>
+                        )}
+                    </div>
+                    <CollapsibleContent className="mt-3 p-4 border rounded-lg space-y-4 bg-card">
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium">Архив</label>
+                            <Select
+                                value={sourceId !== undefined ? String(sourceId) : "all"}
+                                onValueChange={(v) => setSourceId(v === "all" ? undefined : Number(v))}
+                            >
+                                <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Все архивы" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Все архивы</SelectItem>
+                                    {sources.map((s) => (
+                                        <SelectItem key={s.id} value={String(s.id)}>
+                                            {s.source_name}{s.description ? ` (${s.description})` : ""}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium">Сортировка</label>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant={sortBy === "relevance" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setSortBy("relevance")}
                                 >
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Все архивы" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">Все архивы</SelectItem>
-                                        {sources.map((s) => (
-                                            <SelectItem key={s.id} value={String(s.id)}>
-                                                {s.source_name}{s.description ? ` (${s.description})` : ""}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                    По релевантности
+                                </Button>
+                                <Button
+                                    variant={sortBy === "date" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setSortBy("date")}
+                                >
+                                    По дате
+                                </Button>
                             </div>
+                        </div>
 
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium">Сортировка</label>
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant={sortBy === "relevance" ? "default" : "outline"}
-                                        size="sm"
-                                        onClick={() => setSortBy("relevance")}
-                                    >
-                                        По релевантности
-                                    </Button>
-                                    <Button
-                                        variant={sortBy === "date" ? "default" : "outline"}
-                                        size="sm"
-                                        onClick={() => setSortBy("date")}
-                                    >
-                                        По дате
-                                    </Button>
-                                </div>
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium">Режим поиска</label>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant={searchMode === "fuzzy" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setSearchMode("fuzzy")}
+                                >
+                                    Нечёткий
+                                </Button>
+                                <Button
+                                    variant={searchMode === "exact" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setSearchMode("exact")}
+                                >
+                                    Точный
+                                </Button>
                             </div>
-
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium">Режим поиска</label>
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant={searchMode === "fuzzy" ? "default" : "outline"}
-                                        size="sm"
-                                        onClick={() => setSearchMode("fuzzy")}
-                                    >
-                                        Нечёткий
-                                    </Button>
-                                    <Button
-                                        variant={searchMode === "exact" ? "default" : "outline"}
-                                        size="sm"
-                                        onClick={() => setSearchMode("exact")}
-                                    >
-                                        Точный
-                                    </Button>
-                                </div>
-                            </div>
-                        </CollapsibleContent>
-                    </Collapsible>
-                </div>
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
 
                 {/* Empty state */}
                 {showEmptyState && (
@@ -269,13 +252,9 @@ export default function SearchPage() {
                         </p>
                         <div className="flex flex-wrap justify-center gap-2">
                             {EXAMPLE_SEARCHES.map((term) => (
-                                <button
-                                    key={term}
-                                    onClick={() => setQuery(term)}
-                                    className="px-4 py-1.5 text-sm rounded-full border border-border bg-card hover:bg-accent hover:text-accent-foreground transition-colors"
-                                >
+                                <SuggestionChip key={term} onClick={() => setQuery(term)}>
                                     {term}
-                                </button>
+                                </SuggestionChip>
                             ))}
                         </div>
                     </motion.div>
@@ -283,18 +262,6 @@ export default function SearchPage() {
 
                 {/* Results */}
                 <div className="mt-4 grid gap-3">
-                    {total > 0 && (
-                        <p className="text-sm text-muted-foreground">
-                            {total} {(() => {
-                                const n = total % 100;
-                                const d = total % 10;
-                                if (n >= 11 && n <= 19) return "результатов";
-                                if (d === 1) return "результат";
-                                if (d >= 2 && d <= 4) return "результата";
-                                return "результатов";
-                            })()}
-                        </p>
-                    )}
                     <AnimatePresence>
                         {results.map((result, i) => (
                             <motion.div
@@ -412,15 +379,32 @@ export default function SearchPage() {
                     <Pagination page={page} totalPages={pageCount} onPageChange={setPage} />
                 </div>
 
-                {isLoadingPopup && <LoadingOverlay message="Загрузка изображения..." />}
-                <ImagePopup imageUrl={popupImage} onClose={() => setPopupImage(null)} />
+                {/* Hand-off to the assistant */}
+                <Link
+                    to="/chat"
+                    className="mt-8 mb-4 flex items-center gap-4 rounded-lg border border-border bg-card px-5 py-4 shadow-xs transition-colors hover:border-accent"
+                >
+                    <MessagesSquare className="hidden size-5 shrink-0 text-accent sm:block" />
+                    <span className="min-w-0">
+                        <span className="block font-medium">
+                            Не нашли сами? Спросите ассистента →
+                        </span>
+                        <span className="mt-0.5 block text-sm text-muted-foreground">
+                            Опишите, кого ищете, — подскажет, в каких архивах искать дальше.
+                        </span>
+                    </span>
+                </Link>
 
                 {successMessage && (
                     <div className="text-center font-medium mt-4 text-sm text-accent">
                         {successMessage}
                     </div>
                 )}
-            </div>
+                </div>
+
+                {isLoadingPopup && <LoadingOverlay message="Загрузка изображения..." />}
+                <ImagePopup imageUrl={popupImage} onClose={() => setPopupImage(null)} />
+            </PageContainer>
         </TooltipProvider>
     );
 }

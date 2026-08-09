@@ -39,11 +39,12 @@ def _chunk(text=None, usage=None, tool_calls=None):
     return SimpleNamespace(choices=choices, usage=usage)
 
 
-def _tc(index, call_id=None, name=None, arguments=None):
+def _tc(index, call_id=None, name=None, arguments=None, extra_content=None):
     return SimpleNamespace(
         index=index,
         id=call_id,
         function=SimpleNamespace(name=name, arguments=arguments),
+        extra_content=extra_content,
     )
 
 
@@ -1222,3 +1223,94 @@ async def test_agent_round_cap_forces_final_answer_and_charges(
     final_text = "".join(data["text"] for event, data in frames if event == "token")
     assert "Итог: нашёл одну запись" in final_text
     assert frames[-1][1]["searches_left"] == 4  # charged once
+
+
+def test_assistant_tool_message_echoes_extra_content():
+    msg = agent_loop_module._assistant_tool_message(
+        ["думаю"],
+        [
+            {
+                "id": "c1",
+                "name": "search",
+                "arguments": '{"database":"gabo"}',
+                "extra_content": {"google": {"thought_signature": "sig-123"}},
+            }
+        ],
+    )
+    assert msg["role"] == "assistant"
+    assert msg["tool_calls"][0]["extra_content"] == {
+        "google": {"thought_signature": "sig-123"}
+    }
+    assert msg["tool_calls"][0]["function"]["name"] == "search"
+
+
+def test_assistant_tool_message_omits_missing_extra_content():
+    msg = agent_loop_module._assistant_tool_message(
+        [],
+        [{"id": "c1", "name": "search", "arguments": "{}"}],
+    )
+    assert "extra_content" not in msg["tool_calls"][0]
+
+
+async def test_agent_collapses_old_tool_results_in_cycle(
+    client, db_session, agent_mode, fake_llm, fake_mcp, monkeypatch
+):
+    """After collapse_after rounds, older tool bodies become digests; last
+    keep_rounds stay full."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "agent_collapse_after_rounds", 3)
+    monkeypatch.setattr(settings, "agent_collapse_keep_rounds", 2)
+
+    fat = "PAYLOAD-" + ("detail line about the metric book " * 20)
+    transport = FakeTransport(
+        script=[
+            McpCallResult(text=f"Найдено 3 записи\n{fat}-r{i}") for i in range(5)
+        ]
+    )
+    fake_mcp(transport, max_calls=20)
+    scripts = [
+        _tool_round(
+            f"c{i}",
+            "search",
+            [f'{{"database": "gabo", "last_name": "Test{i}"}}'],
+        )
+        for i in range(5)
+    ]
+    scripts.append([_chunk("Итог."), _chunk(usage=_usage(10, 5))])
+    llm_client = fake_llm(scripts)
+
+    # Paid session → full tier (no teaser redaction of tool payloads).
+    user = await create_user(db_session, email="agent-collapse@example.com")
+    db_session.add(
+        Payment(
+            provider="stripe",
+            provider_payment_id="pay-collapse",
+            user_id=user.id,
+            status="succeeded",
+        )
+    )
+    await db_session.commit()
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    frames = await _post_sse(client, user, session["id"], "ищу")
+    assert frames[-1][0] == "done"
+
+    # Final answer round (index 5) sees collapsed history for rounds 0..2.
+    final_messages = llm_client.chat.completions.calls[5]["messages"]
+    tool_msgs = [m for m in final_messages if m.get("role") == "tool"]
+    assert len(tool_msgs) == 5
+
+    # Oldest three collapsed to digests (no fat payload).
+    for msg in tool_msgs[:3]:
+        assert "→" in msg["content"]
+        assert "результатов" in msg["content"]
+        assert fat not in msg["content"]
+
+    # Newest two keep the full payload.
+    for msg in tool_msgs[3:]:
+        assert fat in msg["content"]
+        assert "Найдено 3 записи" in msg["content"]
+
+    # Digests use the shared searchlog shape.
+    assert "search(gabo: Test0) → 3 результатов" in tool_msgs[0]["content"]

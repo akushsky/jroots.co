@@ -1,6 +1,6 @@
-"""LLM routing for the JRoots chat (Moonshot AI / Kimi, OpenAI-compatible).
+"""LLM routing for the JRoots chat (OpenAI-compatible providers).
 
-Responsibilities:
+Supports Gemini (default) and Moonshot/Kimi via `llm_provider`. Responsibilities:
 - streaming completions via the openai SDK against the configured base_url;
 - main/escalation model selection;
 - per-session token cap with a graceful-stop message;
@@ -68,16 +68,63 @@ _RETRY_BACKOFF_BASE_SECONDS = 1.0
 _client: AsyncOpenAI | None = None
 
 
+def _provider_credentials(settings: Any) -> tuple[str, str]:
+    """Return (api_key, base_url) for the configured LLM provider."""
+    if settings.llm_provider == "moonshot":
+        return (
+            settings.moonshot_api_key or "not-configured",
+            settings.moonshot_base_url,
+        )
+    return (
+        settings.google_api_key or "not-configured",
+        settings.gemini_base_url,
+    )
+
+
 def get_llm_client() -> AsyncOpenAI:
-    """Process-wide OpenAI-compatible client for Moonshot AI."""
+    """Process-wide OpenAI-compatible client for the active LLM provider."""
     global _client
     if _client is None:
         settings = get_settings()
-        _client = AsyncOpenAI(
-            api_key=settings.moonshot_api_key or "not-configured",
-            base_url=settings.moonshot_base_url,
-        )
+        api_key, base_url = _provider_credentials(settings)
+        _client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     return _client
+
+
+def _normalize_extra_content(value: Any) -> Any:
+    """Coerce provider-specific tool-call extras (e.g. Gemini thought_signature)
+    into plain JSON so they survive the round-trip back into messages."""
+    if value is None or isinstance(value, (dict, list, str, int, float, bool)):
+        return value
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump()
+    if hasattr(value, "__dict__"):
+        return {
+            key: _normalize_extra_content(item)
+            for key, item in vars(value).items()
+            if not key.startswith("_")
+        }
+    return value
+
+
+def _tool_call_slot_index(
+    call: Any, tool_call_slots: dict[int, dict[str, Any]]
+) -> int:
+    """Resolve the slot key for a streamed tool-call delta.
+
+    OpenAI sends a stable integer `index`. Gemini's OpenAI-compat layer often
+    omits it (`index=None`); a new `id` opens a new slot, and id-less continuations
+    append to the most recent one — otherwise parallel calls collapse into one.
+    """
+    index = getattr(call, "index", None)
+    if index is not None:
+        return int(index)
+    if getattr(call, "id", None):
+        return len(tool_call_slots)
+    if tool_call_slots:
+        return max(tool_call_slots)
+    return 0
 
 
 async def _retry_backoff(attempt: int) -> None:
@@ -161,6 +208,7 @@ async def stream_completion(
     Usage comes from the provider's stream usage chunk (include_usage); if the
     provider omits it, both counters fall back to a chars/4 estimate.
     """
+    settings = get_settings()
     client = get_llm_client()
     kwargs: dict[str, Any] = {
         "model": model,
@@ -172,11 +220,13 @@ async def stream_completion(
         kwargs["max_tokens"] = max_tokens
     if tools is not None:
         kwargs["tools"] = tools
+    if settings.llm_reasoning_effort:
+        kwargs["reasoning_effort"] = settings.llm_reasoning_effort
 
     stream_iterator, first_chunk = await _establish_stream(client, kwargs)
 
     collected: list[str] = []
-    tool_call_slots: dict[int, dict[str, str]] = {}
+    tool_call_slots: dict[int, dict[str, Any]] = {}
     usage: Any = None
 
     async def _all_chunks() -> AsyncGenerator[Any, None]:
@@ -197,8 +247,10 @@ async def stream_completion(
             collected.append(text)
             yield {"type": "token", "text": text}
         for call in getattr(delta, "tool_calls", None) or []:
+            index = _tool_call_slot_index(call, tool_call_slots)
             slot = tool_call_slots.setdefault(
-                call.index, {"id": "", "name": "", "arguments": ""}
+                index,
+                {"id": "", "name": "", "arguments": "", "extra_content": None},
             )
             if getattr(call, "id", None):
                 slot["id"] += call.id
@@ -208,16 +260,34 @@ async def stream_completion(
                     slot["name"] += function.name
                 if getattr(function, "arguments", None):
                     slot["arguments"] += function.arguments
+            # Gemini 3 requires thought_signature echoed on the next turn.
+            extra = getattr(call, "extra_content", None)
+            if extra is not None:
+                slot["extra_content"] = _normalize_extra_content(extra)
 
     if tool_call_slots:
-        yield {
-            "type": "tool_calls",
-            "tool_calls": [tool_call_slots[index] for index in sorted(tool_call_slots)],
-        }
+        emitted: list[dict[str, Any]] = []
+        for index in sorted(tool_call_slots):
+            slot = tool_call_slots[index]
+            entry: dict[str, Any] = {
+                "id": slot["id"],
+                "name": slot["name"],
+                "arguments": slot["arguments"],
+            }
+            if slot.get("extra_content") is not None:
+                entry["extra_content"] = slot["extra_content"]
+            emitted.append(entry)
+        yield {"type": "tool_calls", "tool_calls": emitted}
 
     if usage is not None:
         prompt_tokens = int(usage.prompt_tokens or 0)
         completion_tokens = int(usage.completion_tokens or 0)
+        # Gemini bills thinking tokens as output but often leaves them out of
+        # completion_tokens (total >> prompt + completion). Count them so the
+        # session cap and daily budget stay honest.
+        total_tokens = getattr(usage, "total_tokens", None)
+        if total_tokens is not None:
+            completion_tokens = max(completion_tokens, int(total_tokens) - prompt_tokens)
     else:
         prompt_tokens = sum(_estimate_tokens(m.get("content") or "") for m in messages)
         completion_tokens = _estimate_tokens("".join(collected))

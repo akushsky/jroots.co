@@ -8,6 +8,16 @@
   --font-display: 'Cormorant Garamond', Georgia, serif;
   --font-body: 'DM Sans', system-ui, sans-serif;
 
+  /* Layout system shared by Search and Chat — see components/shared/PageContainer.tsx.
+     The workspace is the reading column plus the session rail, so a chat answer
+     keeps the same text measure as a search result. */
+  --layout-reading: 48rem;
+  --layout-rail: 18rem;
+  --layout-workspace: 71rem;
+  /* App.tsx frames every route in py-10; full-height pages subtract it. */
+  --layout-frame-y: 2.5rem;
+  --layout-viewport: calc(100dvh - (2 * var(--layout-frame-y)));
+
   /* Warm "scholarly archive" palette */
   --background: oklch(0.96 0.01 80);
   --foreground: oklch(0.25 0.03 50);
@@ -114,6 +124,8 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-display: var(--font-display);
   --font-body: var(--font-body);
+  --container-reading: var(--layout-reading);
+  --container-workspace: var(--layout-workspace);
 }
 
 @layer base {

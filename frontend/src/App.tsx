@@ -3,6 +3,7 @@ import {BrowserRouter as Router, Navigate, Route, Routes} from "react-router-dom
 import {Heart, Info, Mail, X} from "lucide-react";
 import {AuthProvider} from "@/contexts/AuthContext";
 import {useAuth} from "@/hooks/useAuth";
+import {registrationEnabled} from "@/lib/registration";
 
 const SearchPage = lazy(() => import("@/components/SearchPage"));
 const AdminLogin = lazy(() => import("@/components/AdminLogin"));
@@ -123,12 +124,17 @@ function AppRoutes() {
     return (
         <>
             {showWelcome && <WelcomePopup onClose={() => setShowWelcome(false)} />}
-            <div className="min-h-screen py-10">
+            <div className="min-h-dvh py-10">
                 <Suspense fallback={<PageFallback />}>
                     <Routes>
                         <Route path="/" element={<SearchPage />} />
                         <Route path="/admin/login" element={<AdminLogin />} />
-                        <Route path="/signup" element={<RegisterForm />} />
+                        <Route
+                            path="/signup"
+                            element={
+                                registrationEnabled ? <RegisterForm /> : <Navigate to="/login" replace />
+                            }
+                        />
                         <Route path="/verify" element={<VerifyPage />} />
                         <Route path="/login" element={<LoginForm />} />
                         <Route path="/forgot-password" element={<ForgotPasswordForm />} />

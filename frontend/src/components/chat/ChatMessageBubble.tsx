@@ -113,20 +113,23 @@ const markdownComponents: Components = {
     code: ({children}) => (
         <code className="bg-muted px-1 py-0.5 rounded text-[0.85em]">{children}</code>
     ),
-    // GFM tables get no borders/padding from the Tailwind preflight —
-    // give the records table an actual grid so columns don't collapse.
+    // Records tables are wide (7 cols on full tier). Wrap cells so the chat
+    // panel never gains a page-level horizontal scrollbar; keep a contained
+    // overflow only as a last resort for pathological unbroken tokens.
     table: ({children}) => (
-        <div className="overflow-x-auto my-2">
-            <table className="w-full border-collapse text-sm">{children}</table>
+        <div className="my-2 max-w-full min-w-0 overflow-x-auto">
+            <table className="w-full min-w-0 border-collapse text-sm">{children}</table>
         </div>
     ),
     th: ({children}) => (
-        <th className="border border-border bg-muted/60 px-2.5 py-1.5 text-left font-semibold whitespace-nowrap">
+        <th className="border border-border bg-muted/60 px-2 py-1.5 text-left font-semibold align-top break-words [overflow-wrap:anywhere]">
             {children}
         </th>
     ),
     td: ({children}) => (
-        <td className="border border-border px-2.5 py-1.5 align-top">{children}</td>
+        <td className="border border-border px-2 py-1.5 align-top break-words [overflow-wrap:anywhere]">
+            {children}
+        </td>
     ),
 };
 
@@ -164,8 +167,15 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
     const isUser = message.role === "user";
 
     return (
-        <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-            <div className={cn("max-w-[85%] md:max-w-[75%] min-w-0 flex flex-col gap-1", isUser && "items-end")}>
+        <div className={cn("flex w-full min-w-0", isUser ? "justify-end" : "justify-start")}>
+            <div
+                className={cn(
+                    "min-w-0 flex flex-col gap-1",
+                    // Assistant answers (often with records tables) use the full
+                    // reading column; user bubbles stay narrower and right-aligned.
+                    isUser ? "max-w-[85%] md:max-w-[75%] items-end" : "w-full max-w-full",
+                )}
+            >
                 {!isUser && (message.steps || message.searchlog) && (
                     <StepsBlock
                         steps={message.steps ?? []}
@@ -175,7 +185,7 @@ export function ChatMessageBubble({message}: { message: DisplayMessage }) {
                 )}
                 <div
                     className={cn(
-                        "rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-xs",
+                        "min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-xs",
                         isUser
                             ? "bg-accent text-accent-foreground rounded-br-md whitespace-pre-wrap"
                             : "bg-secondary text-secondary-foreground rounded-bl-md",

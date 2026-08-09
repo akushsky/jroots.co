@@ -158,6 +158,8 @@ export function ChatInput({disabled, attachments, onAttachFile, onRemoveAttachme
                     <Paperclip />
                 </Button>
                 <textarea
+                    // remounted with a prefill (hint or ?q=) — put the cursor where the user will type
+                    autoFocus={Boolean(initialValue)}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={(e) => {
@@ -170,7 +172,7 @@ export function ChatInput({disabled, attachments, onAttachFile, onRemoveAttachme
                     rows={2}
                     placeholder="Опишите, кого ищете: фамилия, имя, место, примерные годы…"
                     aria-label="Сообщение ассистенту"
-                    className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
+                    className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2.5 text-base leading-snug shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50 md:text-sm"
                 />
                 <Button
                     onClick={submit}

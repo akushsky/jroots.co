@@ -66,6 +66,14 @@ TOOL_UNKNOWN_MESSAGE = "Error: инструмент '{name}' недоступе�
 
 EMPTY_RESULT_MESSAGE = "Error: пустой ответ поискового сервиса."
 
+# Appended to tool results that exceeded the model-facing char budget: the
+# model must know data was cut and how to route around it (narrow the query
+# or drill down via get_record) instead of hallucinating the missing tail.
+TRUNCATED_RESULT_MARKER = (
+    "\n[... выдача обрезана сервером: показано {kept} из {total} символов — "
+    "сузь запрос (год/место) или возьми конкретную запись через get_record ...]"
+)
+
 # Per-database timeout overrides (seconds) for archives that are slow by
 # design. The default (jroots_mcp_timeout_seconds, 30s) kills Samara ELAR
 # instances whose own p90 is ~90s — the call would error out every time.
@@ -262,6 +270,7 @@ class McpArchiveClient:
         initial_used: int = 0,
         max_calls: int = 15,
         rate_limit_interval: float = 1.0,
+        result_max_chars: int = 8000,
         db: AsyncSession | None = None,
         teaser: bool = False,
     ) -> None:
@@ -278,6 +287,10 @@ class McpArchiveClient:
         # the per-cycle delta for session statistics.
         self._initial_used = initial_used
         self.calls_used = initial_used
+        # Token diet: tool results are truncated to this budget before the
+        # model sees them (raw archive replies run 10-30 KB and then get
+        # re-sent every agent round).
+        self.result_max_chars = result_max_chars
         self.call_log: list[ToolCallRecord] = []
         self.searches_with_results = 0
         self.empty_searches = 0
@@ -375,9 +388,12 @@ class McpArchiveClient:
         latency_ms = int((time.monotonic() - started) * 1000)
 
         self.calls_used += 1
+        # Token diet: truncate the raw reply BEFORE sanitize so teaser-tier
+        # ref:N handles are built from exactly what the model will see.
+        raw_text, truncated = self._truncate_result(result.text)
         # Teaser tier: the model gets the sanitized text (ciphers masked,
         # URLs swapped for ref:N handles) — it cannot leak what it never saw.
-        text = self._sanitize_result_text(result.text)
+        text = self._sanitize_result_text(raw_text)
         is_error = result.is_error or text.lstrip().startswith("Error:")
         result_count: int | None = None
         if name == "search":
@@ -397,9 +413,10 @@ class McpArchiveClient:
                 is_error=is_error,
             )
         )
+        shown = text or EMPTY_RESULT_MESSAGE
         logger.info(
             "MCP call session=%d user=%d tool=%s database=%s args=%s "
-            "results=%s latency_ms=%d error=%s",
+            "results=%s latency_ms=%d error=%s truncated=%s result_chars=%d",
             self.session_id,
             self.user_id,
             name,
@@ -408,17 +425,33 @@ class McpArchiveClient:
             result_count,
             latency_ms,
             is_error,
+            truncated,
+            len(shown),
         )
         await self._journal(
             tool=name,
             database=database,
             arguments=arguments,
             results_count=result_count,
+            result_chars=len(shown),
             latency_ms=latency_ms,
             status="error" if is_error else "ok",
-            error=text if is_error else None,
+            error=shown if is_error else None,
         )
-        return text or EMPTY_RESULT_MESSAGE
+        return shown
+
+    def _truncate_result(self, text: str) -> tuple[str, bool]:
+        """Hard-cap tool-result text shown to the model.
+
+        Keeps the head up to ``result_max_chars`` and appends a marker that
+        tells the model data was cut and how to recover (narrow / get_record).
+        Returns (possibly_truncated_text, was_truncated).
+        """
+        if not text or len(text) <= self.result_max_chars:
+            return text, False
+        kept = self.result_max_chars
+        marker = TRUNCATED_RESULT_MARKER.format(kept=kept, total=len(text))
+        return text[:kept] + marker, True
 
     def _resolve_refs(self, arguments: Any) -> Any:
         """Swap opaque ref:N handles in arguments back to the real URLs.
@@ -477,6 +510,7 @@ class McpArchiveClient:
         arguments: dict[str, Any],
         status: str,
         results_count: int | None = None,
+        result_chars: int | None = None,
         latency_ms: int | None = None,
         error: str | None = None,
     ) -> None:
@@ -499,6 +533,7 @@ class McpArchiveClient:
                         database=database,
                         args_json=arguments if isinstance(arguments, dict) else None,
                         results_count=results_count,
+                        result_chars=result_chars,
                         latency_ms=latency_ms,
                         status=status,
                         error=error,
@@ -583,6 +618,7 @@ def build_mcp_client(
         initial_used=initial_used,
         max_calls=settings.mcp_tool_call_cap,
         rate_limit_interval=settings.mcp_rate_limit_per_db_seconds,
+        result_max_chars=settings.mcp_tool_result_max_chars,
         db=db,
         teaser=teaser,
     )

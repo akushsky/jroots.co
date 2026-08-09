@@ -40,6 +40,10 @@ async def register_user(
     db: AsyncSession = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
+    settings = get_settings()
+    if not settings.registration_enabled:
+        raise HTTPException(status_code=403, detail="Регистрация временно закрыта")
+
     if not await verify_hcaptcha(data.captcha_token):
         raise HTTPException(status_code=400, detail="Проверка CAPTCHA не пройдена")
 
@@ -47,7 +51,6 @@ async def register_user(
     if existing_user.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Этот email уже зарегистрирован")
 
-    settings = get_settings()
     verification_token = generate_verification_token(str(data.email))
     verification_url = f"{settings.frontend_url}/verify?token={verification_token}"
 

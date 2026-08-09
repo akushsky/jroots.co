@@ -64,12 +64,17 @@ Configured in `.pre-commit-config.yaml` — runs ruff, pytest, eslint, tsc, fron
 - `app/main.py` — App factory with lifespan, CORS, middleware
 - `app/config.py` — Pydantic Settings (all env vars)
 - `app/database.py` — Async SQLAlchemy engine + session factory
-- `app/models/` — ORM models: `User`, `Image`, `SearchObject`, `ImageSource`, `ImagePurchase`
+- `app/models/` — ORM models: `User`, `Image`, `SearchObject`, `ImageSource`, `ImagePurchase`, chat models
 - `app/schemas/` — Pydantic request/response schemas
-- `app/routers/` — API routes: `auth`, `search`, `images`, `admin`, `telegram`
-- `app/services/` — Business logic: `auth` (JWT/passwords), `email` (Resend), `telegram`
+- `app/routers/` — API routes: `auth`, `search`, `images`, `admin`, `telegram`, `chat`
+- `app/services/` — Business logic: `auth`, `email`, `telegram`, `llm_router`, `agent_loop`, `mcp_client`
 - `app/middleware/` — Request logging + tracing
 - `alembic/` — Database migrations
+
+### Chat LLM
+- Provider toggle: `LLM_PROVIDER=gemini` (default) or `moonshot`. Credentials: `GOOGLE_API_KEY` / `MOONSHOT_API_KEY`.
+- Default models when unset: Gemini → `gemini-3.1-pro-preview`; Moonshot → `kimi-k2.6` / `kimi-k3`.
+- Token diet: `MCP_TOOL_RESULT_MAX_CHARS` (default 8000), in-cycle history collapse via `AGENT_COLLAPSE_AFTER_ROUNDS` / `AGENT_COLLAPSE_KEEP_ROUNDS`.
 
 ### Frontend (React 19 + Vite)
 - Uses Tailwind CSS v4 (via `@tailwindcss/vite` plugin, no `tailwind.config.js`)
@@ -91,6 +96,8 @@ Full-text search with PostgreSQL `tsvector`/`tsquery`, trigram similarity, and L
 ## Deployment
 
 Docker Compose on Hetzner via **Coolify**. Production config in `docker-compose.prod.yml`. Backend runs Gunicorn (4 workers), frontend runs nginx. Media stored in a named Docker volume. CDN via Bunny.net (`jroots.b-cdn.net`).
+
+Chat beta: `docker-compose.beta.yml` on `chat.jroots.co` (branch `jroots-chat`), separate Postgres, `REGISTRATION_ENABLED=false` + `VITE_REGISTRATION_ENABLED=false`, bootstrap admin via `BOOTSTRAP_ADMIN_EMAIL`. MCP via `http://jroots-mcp:8100` on the shared `coolify` network.
 
 ## Key Patterns
 

@@ -14,6 +14,9 @@ import {
 } from "@/api/chat";
 import type {CappedReason, ChatSessionSummary, Credits, DoneEvent, UsageEvent} from "@/api/chat";
 import {axiosErrorDetail, ChatApiError} from "@/api/errors";
+import {AppHeader} from "@/components/shared/AppHeader";
+import {PageContainer} from "@/components/shared/PageContainer";
+import {SuggestionChip} from "@/components/shared/SuggestionChip";
 import {SessionSidebar} from "./SessionSidebar";
 import {ChatMessageBubble} from "./ChatMessageBubble";
 import {ChatInput} from "./ChatInput";
@@ -50,6 +53,14 @@ export default function ChatPage() {
     const [searchParams] = useSearchParams();
     // Landing hand-off: /chat?q=... prefills the first message.
     const initialQuery = searchParams.get("q") ?? undefined;
+    // ChatInput owns its draft; remounting it is how the hints prefill the field.
+    const [draft, setDraft] = useState<string | undefined>(initialQuery);
+    const [draftKey, setDraftKey] = useState(0);
+
+    const applyHint = useCallback((hint: string) => {
+        setDraft(hint);
+        setDraftKey((key) => key + 1);
+    }, []);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -75,11 +86,21 @@ export default function ChatPage() {
 
     useEffect(() => {
         let cancelled = false;
+        // Capture at mount: landing hand-off (/chat?q=...) means "start a new
+        // search", not "dump this into the previous session".
+        const landingQuery = initialQuery;
         Promise.all([listSessions(), getCredits()])
             .then(([sessionList, creditBalance]) => {
                 if (cancelled) return;
                 setSessions(sessionList);
                 setCredits(creditBalance);
+                if (landingQuery) {
+                    // Fresh composer: activeId stays null until the first send
+                    // creates a session. List of past sessions remains in the rail.
+                    setActiveId(null);
+                    setMessages([]);
+                    return;
+                }
                 if (sessionList.length > 0) {
                     selectSession(sessionList[0].id);
                 }
@@ -355,152 +376,167 @@ export default function ChatPage() {
 
     return (
         <PaywallContext.Provider value={openPaywall}>
-            <div className="relative flex h-[calc(100vh-5rem)] gap-4 px-4 md:px-6">
-            <aside
-                className={cn(
-                    "w-72 max-w-[85vw] shrink-0 bg-card rounded-lg border border-border overflow-hidden",
-                    sidebarOpen
-                        ? "absolute inset-y-0 left-0 z-20 flex md:static"
-                        : "hidden md:flex",
-                )}
-            >
-                <SessionSidebar
-                    sessions={sessions}
-                    activeId={activeId}
-                    onSelect={selectSession}
-                    onNew={startNewSearch}
-                    onClose={() => setSidebarOpen(false)}
-                />
-            </aside>
-            {sidebarOpen && (
-                <button
-                    className="absolute inset-0 z-10 bg-foreground/20 md:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                    aria-label="Закрыть список поисков"
-                />
-            )}
+            <PageContainer measure="workspace" className="flex h-[var(--layout-viewport)] flex-col">
+                <AppHeader subtitle="Помощник по семейным архивам" className="mb-5" />
 
-            <main className="flex-1 min-w-0 flex flex-col bg-card rounded-lg border border-border overflow-hidden">
-                <header className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="md:hidden"
-                        onClick={() => setSidebarOpen(true)}
-                        aria-label="Открыть список поисков"
+                <div className="relative flex flex-1 min-h-0 gap-4 pb-2 lg:gap-6">
+                    <aside
+                        className={cn(
+                            "w-[var(--layout-rail)] max-w-[85vw] shrink-0 bg-card rounded-xl border border-border shadow-xs overflow-hidden",
+                            sidebarOpen
+                                ? "absolute inset-y-0 left-0 z-20 flex md:static"
+                                : "hidden md:flex",
+                        )}
                     >
-                        <PanelLeft />
-                    </Button>
-                    <div className="min-w-0">
-                        <h1 className="font-display text-lg font-semibold truncate">
-                            Помощник по семейным архивам
-                        </h1>
-                        <p className="text-xs text-muted-foreground hidden sm:block">
-                            Расскажите, кого ищете — подскажу, где найти документы
-                        </p>
-                    </div>
-                    <div className="ml-auto flex items-center gap-3">
-                        {sessionTokens !== null && (
-                            <span className="text-xs text-muted-foreground hidden md:inline">
-                                Токенов в сессии: {sessionTokens.toLocaleString("ru-RU")}
-                            </span>
-                        )}
-                        {credits !== null && (
-                            <span className="inline-flex items-center gap-1.5 text-sm bg-secondary rounded-full px-3 py-1">
-                                <Coins className="w-3.5 h-3.5 text-accent" />
-                                Осталось поисков: {credits.searches_left}
-                            </span>
-                        )}
-                        {credits !== null && (
-                            <span className="inline-flex items-center gap-1.5 text-sm bg-secondary rounded-full px-3 py-1">
-                                <ScanLine className="w-3.5 h-3.5 text-accent" />
-                                Сканов: {credits.scans_left}
-                            </span>
-                        )}
-                    </div>
-                </header>
+                        <SessionSidebar
+                            sessions={sessions}
+                            activeId={activeId}
+                            onSelect={selectSession}
+                            onNew={startNewSearch}
+                            onClose={() => setSidebarOpen(false)}
+                        />
+                    </aside>
+                    {sidebarOpen && (
+                        <button
+                            className="absolute inset-0 z-10 bg-foreground/20 md:hidden"
+                            onClick={() => setSidebarOpen(false)}
+                            aria-label="Закрыть список поисков"
+                        />
+                    )}
 
-                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {loading ? (
-                        <div className="flex items-center justify-center h-full">
-                            <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground/20 border-t-foreground/60" />
-                        </div>
-                    ) : messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto space-y-4">
-                            <h2 className="font-display text-2xl font-semibold">
-                                С чего начнём поиск?
-                            </h2>
-                            <p className="text-muted-foreground text-sm">
-                                Напишите всё, что знаете о человеке или семье: фамилию, имена,
-                                место жительства, примерные годы. Помогу составить план поиска
-                                документов для репатриации.
-                            </p>
-                            <div className="flex flex-wrap justify-center gap-2">
-                                {HINTS.map((hint) => (
-                                    <span
-                                        key={hint}
-                                        className="text-xs bg-muted text-muted-foreground rounded-full px-3 py-1.5"
-                                    >
-                                        {hint}
+                    <main className="flex-1 min-w-0 flex flex-col bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+                        <header className="min-h-14 flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 border-b border-border sm:px-5">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="md:hidden"
+                                onClick={() => setSidebarOpen(true)}
+                                aria-label="Открыть список поисков"
+                            >
+                                <PanelLeft />
+                            </Button>
+                            <span className="hidden items-center gap-2 text-sm font-medium sm:inline-flex">
+                                <span
+                                    aria-hidden
+                                    className={cn(
+                                        "size-1.5 rounded-full bg-accent",
+                                        streaming && "animate-pulse",
+                                    )}
+                                />
+                                {streaming ? "Ассистент ищет…" : "Ассистент"}
+                            </span>
+                            <div className="ml-auto flex items-center gap-2">
+                                {sessionTokens !== null && (
+                                    <span className="text-xs text-muted-foreground hidden lg:inline">
+                                        Токенов в сессии: {sessionTokens.toLocaleString("ru-RU")}
                                     </span>
-                                ))}
+                                )}
+                                {credits !== null && (
+                                    <div className="flex items-center rounded-full border border-border bg-secondary/60 px-1 text-xs">
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-1">
+                                            <Coins className="w-3.5 h-3.5 text-accent" />
+                                            Осталось поисков: {credits.searches_left}
+                                        </span>
+                                        <span aria-hidden className="h-3.5 w-px bg-border" />
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-1">
+                                            <ScanLine className="w-3.5 h-3.5 text-accent" />
+                                            Сканов: {credits.scans_left}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </header>
+
+                        <div ref={scrollRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+                            <div className="mx-auto flex min-h-full w-full max-w-reading min-w-0 flex-col gap-5 px-4 py-5 sm:px-6">
+                                {loading ? (
+                                    <div className="flex flex-1 items-center justify-center">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground/20 border-t-foreground/60" />
+                                    </div>
+                                ) : messages.length === 0 ? (
+                                    <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+                                        <h2 className="font-display text-2xl font-semibold">
+                                            С чего начнём поиск?
+                                        </h2>
+                                        <p className="max-w-md text-muted-foreground text-sm">
+                                            Напишите всё, что знаете о человеке или семье: фамилию, имена,
+                                            место жительства, примерные годы. Помогу составить план поиска
+                                            документов для репатриации.
+                                        </p>
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            {HINTS.map((hint) => (
+                                                <SuggestionChip
+                                                    key={hint}
+                                                    onClick={() => applyHint(hint)}
+                                                    className="px-3 py-1 text-xs"
+                                                >
+                                                    {hint}
+                                                </SuggestionChip>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    messages.map((message) => (
+                                        <ChatMessageBubble key={message.id} message={message} />
+                                    ))
+                                )}
                             </div>
                         </div>
-                    ) : (
-                        messages.map((message) => (
-                            <ChatMessageBubble key={message.id} message={message} />
-                        ))
-                    )}
-                </div>
 
-                <footer className="border-t border-border p-4">
-                    {showPaywall ? (
-                        <Paywall />
-                    ) : (
-                        <ChatInput
-                            disabled={streaming || loading}
-                            attachments={attachments}
-                            onAttachFile={attachScan}
-                            onRemoveAttachment={removeAttachment}
-                            onSend={send}
-                            initialValue={initialQuery}
-                        />
-                    )}
-                    <p className="text-xs text-muted-foreground mt-2 text-center">
-                        Ответы ассистента — ориентир для поиска, а не гарантия. Проверяйте архивные ссылки.{" "}
-                        <Link to="/" className="text-accent hover:underline">
-                            Предпочитаете искать сами? Профессиональный поиск →
-                        </Link>
-                    </p>
-                </footer>
-            </main>
+                        <footer className="border-t border-border px-4 py-3 sm:px-6">
+                            <div className="mx-auto w-full max-w-reading">
+                                {showPaywall ? (
+                                    <Paywall />
+                                ) : (
+                                    <ChatInput
+                                        key={draftKey}
+                                        disabled={streaming || loading}
+                                        attachments={attachments}
+                                        onAttachFile={attachScan}
+                                        onRemoveAttachment={removeAttachment}
+                                        onSend={send}
+                                        initialValue={draft}
+                                    />
+                                )}
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                    <span>
+                                        Ответы ассистента — ориентир для поиска, а не гарантия. Проверяйте архивные ссылки.
+                                    </span>
+                                    <Link to="/" className="text-accent hover:underline">
+                                        Предпочитаете искать сами? Профессиональный поиск →
+                                    </Link>
+                                </div>
+                            </div>
+                        </footer>
+                    </main>
 
-            {paywallOpen && (
-                <div
-                    className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex justify-center items-center z-50 p-4"
-                    onClick={() => setPaywallOpen(false)}
-                >
-                    <div
-                        role="dialog"
-                        aria-label="Тарифы"
-                        className="bg-card rounded-lg shadow-xl max-w-2xl w-full p-6 relative border-t-2 border-accent"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <button
+                    {paywallOpen && (
+                        <div
+                            className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex justify-center items-center z-50 p-4"
                             onClick={() => setPaywallOpen(false)}
-                            className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
-                            aria-label="Закрыть"
                         >
-                            <X className="w-5 h-5" />
-                        </button>
-                        <Paywall
-                            title="Полная версия записи"
-                            description="Ссылки на источники, сканы документов и полный текст записей доступны на платных тарифах."
-                        />
-                    </div>
+                            <div
+                                role="dialog"
+                                aria-label="Тарифы"
+                                className="bg-card rounded-lg shadow-xl max-w-2xl w-full p-6 relative border-t-2 border-accent"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <button
+                                    onClick={() => setPaywallOpen(false)}
+                                    className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
+                                    aria-label="Закрыть"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                                <Paywall
+                                    title="Полная версия записи"
+                                    description="Ссылки на источники, сканы документов и полный текст записей доступны на платных тарифах."
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
-            )}
-            </div>
+            </PageContainer>
         </PaywallContext.Provider>
     );
 }

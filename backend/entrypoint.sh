@@ -31,5 +31,12 @@ else:
 
 alembic upgrade head
 
-echo "Migrations complete. Starting server..."
+echo "Migrations complete."
+
+if [ -n "${BOOTSTRAP_ADMIN_EMAIL:-}" ]; then
+  echo "Ensuring bootstrap admin (${BOOTSTRAP_ADMIN_EMAIL})..."
+  python -m app.bootstrap_admin
+fi
+
+echo "Starting server..."
 exec "$@"

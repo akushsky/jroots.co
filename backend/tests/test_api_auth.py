@@ -1,9 +1,11 @@
 from unittest.mock import patch, AsyncMock
 
+from app.rate_limit import limiter
 from tests.conftest import create_user
 
 
 async def test_register_success(client, db_session):
+    limiter.reset()
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True), \
          patch("app.routers.auth.send_email", new_callable=AsyncMock):
         response = await client.post("/api/register", json={
@@ -15,7 +17,30 @@ async def test_register_success(client, db_session):
     assert response.status_code == 200
 
 
+async def test_register_disabled_returns_403(client, monkeypatch):
+    from app.config import get_settings
+
+    limiter.reset()
+    get_settings.cache_clear()
+    monkeypatch.setenv("REGISTRATION_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True):
+            response = await client.post("/api/register", json={
+                "username": "blocked",
+                "email": "blocked@example.com",
+                "password": "securepass123",
+                "captcha_token": "fake-token",
+            })
+        assert response.status_code == 403
+        assert "закрыта" in response.json()["detail"].lower()
+    finally:
+        monkeypatch.delenv("REGISTRATION_ENABLED", raising=False)
+        get_settings.cache_clear()
+
+
 async def test_register_duplicate_email(client, db_session):
+    limiter.reset()
     await create_user(db_session, email="dup@example.com")
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True), \
          patch("app.routers.auth.send_email", new_callable=AsyncMock):
@@ -30,6 +55,7 @@ async def test_register_duplicate_email(client, db_session):
 
 
 async def test_register_duplicate_username_allowed(client, db_session):
+    limiter.reset()
     await create_user(db_session, username="taken")
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True), \
          patch("app.routers.auth.send_email", new_callable=AsyncMock):
@@ -43,6 +69,7 @@ async def test_register_duplicate_username_allowed(client, db_session):
 
 
 async def test_register_strips_whitespace(client, db_session):
+    limiter.reset()
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=True), \
          patch("app.routers.auth.send_email", new_callable=AsyncMock):
         response = await client.post("/api/register", json={
@@ -61,6 +88,7 @@ async def test_register_strips_whitespace(client, db_session):
 
 
 async def test_register_captcha_failure(client):
+    limiter.reset()
     with patch("app.routers.auth.verify_hcaptcha", new_callable=AsyncMock, return_value=False):
         response = await client.post("/api/register", json={
             "username": "newuser",

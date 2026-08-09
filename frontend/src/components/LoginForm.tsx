@@ -5,7 +5,9 @@ import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {userLogin} from "@/api/api";
 import {useAuth} from "@/hooks/useAuth";
+import {BrandMark} from "@/components/shared/BrandMark";
 import {StatusMessage} from "@/components/shared/StatusMessage";
+import {registrationEnabled} from "@/lib/registration";
 
 export default function LoginForm() {
     const [email, setEmail] = useState("");
@@ -37,15 +39,10 @@ export default function LoginForm() {
     };
 
     return (
-        <div className="max-w-md mx-auto mt-16">
+        <div className="max-w-md mx-auto mt-10 px-4">
+            <BrandMark className="mb-6" />
             <Card>
                 <CardContent className="p-6 space-y-4">
-                    <div className="text-center">
-                        <Link to="/" className="text-sm font-medium text-accent hover:underline">
-                            &larr; На главную
-                        </Link>
-                    </div>
-
                     <h2 className="text-xl font-semibold text-center">Вход</h2>
                     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                         <Input
@@ -72,12 +69,14 @@ export default function LoginForm() {
                             {loading ? "Вход..." : "Войти"}
                         </Button>
                     </form>
-                    <p className="text-center text-sm text-muted-foreground">
-                        Нет аккаунта?{" "}
-                        <Link to="/signup" className="font-semibold text-accent hover:underline">
-                            Зарегистрироваться
-                        </Link>
-                    </p>
+                    {registrationEnabled && (
+                        <p className="text-center text-sm text-muted-foreground">
+                            Нет аккаунта?{" "}
+                            <Link to="/signup" className="font-semibold text-accent hover:underline">
+                                Зарегистрироваться
+                            </Link>
+                        </p>
+                    )}
                 </CardContent>
             </Card>
         </div>

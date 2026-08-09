@@ -5,6 +5,7 @@ import pytest
 from app.services.mcp_client import (
     TOOL_CALL_LIMIT_MESSAGE,
     TOOL_TIMEOUT_MESSAGE,
+    TRUNCATED_RESULT_MARKER,
     McpArchiveClient,
     McpCallResult,
     McpUnavailableError,
@@ -386,3 +387,99 @@ async def test_journal_cap_blocked_failure_does_not_kill_the_call():
 )
 def test_estimate_result_count(text, expected):
     assert estimate_result_count(text) == expected
+
+
+class RecordingDb(FlakyDb):
+    """Journal sink that never fails (fail_commits=0)."""
+
+    def __init__(self):
+        super().__init__(fail_commits=0)
+
+
+async def test_truncates_long_result_and_journals_result_chars():
+    long_body = "Найдено 40 записей\n" + ("запись подробная\n" * 2000)
+    assert len(long_body) > 8000
+    db = RecordingDb()
+    transport = FakeTransport(script=[McpCallResult(text=long_body)])
+    client = McpArchiveClient(
+        transport,
+        session_id=1,
+        user_id=2,
+        rate_limit_interval=0,
+        result_max_chars=8000,
+        db=db,
+    )
+    await client.open()
+    text = await client.call(
+        "search", {"database": "gabo", "last_name": "Фалькович"}
+    )
+
+    assert "выдача обрезана сервером" in text
+    assert f"показано 8000 из {len(long_body)}" in text
+    assert text.startswith(long_body[:8000])
+    assert TRUNCATED_RESULT_MARKER.format(kept=8000, total=len(long_body)) in text
+
+    row = db.added[-1]
+    assert row.result_chars == len(text)
+    assert row.status == "ok"
+    assert row.results_count is not None
+
+
+async def test_short_result_is_not_truncated():
+    body = "Найдено 2 записи: Фалькович"
+    transport = FakeTransport(script=[McpCallResult(text=body)])
+    client = _client(transport, result_max_chars=8000, rate_limit_interval=0)
+    await client.open()
+    text = await client.call("search", {"database": "gabo"})
+    assert text == body
+    assert "обрезана" not in text
+
+
+async def test_teaser_ref_handles_built_from_truncated_text():
+    """URLs past the truncate cut never become ref handles — model can't see them."""
+    head = "URL: https://toldot.com/life/cemetery/graves_1.html\n"
+    # Second URL sits after the budget so it must not be registered.
+    long_body = head + ("x" * 9000) + "\nURL: https://toldot.com/tail.html"
+    transport = FakeTransport(
+        script=[
+            McpCallResult(text=long_body),
+            McpCallResult(text="ok"),
+        ]
+    )
+    client = _client(
+        transport, teaser=True, result_max_chars=200, rate_limit_interval=0
+    )
+    await client.open()
+    text = await client.call("search", {"database": "toldot_cemetery"})
+    assert "ref:1" in text
+    assert "toldot.com" not in text
+    assert "обрезана" in text
+    # Only the head URL was registered.
+    assert client._ref_map == {
+        "ref:1": "https://toldot.com/life/cemetery/graves_1.html"
+    }
+    await client.call(
+        "get_record", {"database": "toldot_cemetery", "record_id": "ref:1"}
+    )
+    assert (
+        transport.calls[-1][1]["record_id"]
+        == "https://toldot.com/life/cemetery/graves_1.html"
+    )
+
+
+async def test_cap_blocked_journals_without_result_chars():
+    db = RecordingDb()
+    transport = FakeTransport()
+    client = McpArchiveClient(
+        transport,
+        session_id=1,
+        user_id=2,
+        max_calls=0,
+        rate_limit_interval=0,
+        db=db,
+    )
+    await client.open()
+    assert await client.call("search", {"database": "gabo"}) == TOOL_CALL_LIMIT_MESSAGE
+    row = db.added[-1]
+    assert row.status == "cap_blocked"
+    assert row.result_chars is None
