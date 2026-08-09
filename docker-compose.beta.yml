@@ -3,23 +3,26 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    # Build from db/Dockerfile so init.sql is baked in (Coolify file bind-mounts
+    # often become empty directories and break first-boot init).
+    build:
+      context: ./db
+      dockerfile: Dockerfile
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-jroots}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-jroots_beta}
     volumes:
       - beta-db-data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - coolify
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jroots} -d ${POSTGRES_DB:-jroots_beta}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 12
+      start_period: 60s
 
   backend:
     build:
