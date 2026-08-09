@@ -25,6 +25,11 @@ export function chatErrorForCode(code: string | null): ChatErrorDisplay | null {
                 text: "Слишком много запросов. Подождите немного и попробуйте ещё раз.",
                 paywallAction: false,
             };
+        case "generating":
+            return {
+                text: "Ответ ещё готовится. Подождите немного и попробуйте ещё раз.",
+                paywallAction: false,
+            };
         default:
             return null;
     }

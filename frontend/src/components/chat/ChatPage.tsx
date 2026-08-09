@@ -10,9 +10,18 @@ import {
     listSessions,
     streamMessage,
     uploadScan,
+    waitForAssistantReply,
     ScanUploadError,
 } from "@/api/chat";
-import type {CappedReason, ChatSessionSummary, Credits, DoneEvent, UsageEvent} from "@/api/chat";
+import type {
+    CappedReason,
+    ChatMessage,
+    ChatSessionSummary,
+    Credits,
+    DoneEvent,
+    RecoverKick,
+    UsageEvent,
+} from "@/api/chat";
 import {axiosErrorDetail, ChatApiError} from "@/api/errors";
 import {AppHeader} from "@/components/shared/AppHeader";
 import {PageContainer} from "@/components/shared/PageContainer";
@@ -28,6 +37,19 @@ import type {ScanAttachment} from "./scans";
 import type {DisplayMessage} from "./types";
 
 const CONNECTION_LOST = "Соединение прервано, попробуйте ещё раз";
+const RECOVERING = "Восстанавливаю ответ…";
+
+function displayFromAssistant(message: ChatMessage): Omit<DisplayMessage, "id" | "role"> {
+    const {steps, content: withoutSteps} = extractSteps(message.content);
+    const {lines, rest} = extractSearchlog(withoutSteps);
+    return {
+        content: rest,
+        steps: steps ?? undefined,
+        searchlog: lines.length > 0 ? lines : undefined,
+        pending: false,
+        live: false,
+    };
+}
 
 const HINTS = [
     "Рабиновичи из Бердичева, конец XIX века",
@@ -64,6 +86,7 @@ export default function ChatPage() {
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
+    const recoverKickRef = useRef<RecoverKick>({nudge: null});
 
     const patchAttachment = useCallback((localId: string, patch: Partial<ScanAttachment>) => {
         setAttachments((prev) => prev.map((a) => (a.localId === localId ? {...a, ...patch} : a)));
@@ -122,6 +145,16 @@ export default function ChatPage() {
         const el = scrollRef.current;
         if (el) el.scrollTop = el.scrollHeight;
     }, [messages, streaming]);
+
+    useEffect(() => {
+        const onVisibility = () => {
+            if (document.visibilityState === "visible") {
+                recoverKickRef.current.nudge?.();
+            }
+        };
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => document.removeEventListener("visibilitychange", onVisibility);
+    }, []);
 
     const selectSession = useCallback(async (id: string) => {
         setActiveId(id);
@@ -349,8 +382,45 @@ export default function ChatPage() {
                 const result = scanIds.length > 0
                     ? await streamMessage(sessionId, content, callbacks, controller.signal, scanIds)
                     : await streamMessage(sessionId, content, callbacks, controller.signal);
-                if (!result.finished) {
-                    patchAssistant(assistantId, {pending: false, live: false, content: CONNECTION_LOST, error: true});
+                if (!result.finished && !controller.signal.aborted) {
+                    // Stream dropped (tab switch / network). Backend may still
+                    // finish the agent cycle — poll until the reply is persisted.
+                    patchAssistant(assistantId, {
+                        pending: false,
+                        live: true,
+                        content: RECOVERING,
+                        error: false,
+                    });
+                    const recovered = await waitForAssistantReply(sessionId, content, {
+                        signal: controller.signal,
+                        kick: recoverKickRef.current,
+                    });
+                    if (recovered.outcome === "recovered") {
+                        const display = displayFromAssistant(recovered.message);
+                        patchAssistant(assistantId, {
+                            id: recovered.message.id,
+                            ...display,
+                        });
+                        getCredits().then(setCredits).catch(() => {});
+                        listSessions()
+                            .then((fresh) =>
+                                setSessions((prev) => {
+                                    const merged = [...fresh];
+                                    for (const s of prev) {
+                                        if (!fresh.some((f) => f.id === s.id)) merged.push(s);
+                                    }
+                                    return merged;
+                                }),
+                            )
+                            .catch(() => {});
+                    } else if (recovered.outcome !== "aborted") {
+                        patchAssistant(assistantId, {
+                            pending: false,
+                            live: false,
+                            content: CONNECTION_LOST,
+                            error: true,
+                        });
+                    }
                 }
             } catch (error) {
                 if (!controller.signal.aborted) {

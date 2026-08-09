@@ -9,6 +9,8 @@ export interface ChatSessionSummary {
     title?: string;
     /** Preview of the last message — display fallback when title is empty. */
     last_message?: string | null;
+    /** open | generating | error — present on full session payloads. */
+    status?: string;
     created_at: string;
 }
 
@@ -21,6 +23,94 @@ export interface ChatMessage {
 
 export interface ChatSession extends ChatSessionSummary {
     messages: ChatMessage[];
+}
+
+/** Mutable wake-up handle for poll loops (e.g. tab becomes visible again). */
+export interface RecoverKick {
+    nudge: (() => void) | null;
+}
+
+export type RecoverResult =
+    | {outcome: "recovered"; message: ChatMessage}
+    | {outcome: "failed"}
+    | {outcome: "timeout"}
+    | {outcome: "aborted"};
+
+function findAssistantAfterUser(session: ChatSession, userContent: string): ChatMessage | null {
+    const messages = session.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user" && messages[i].content === userContent) {
+            const next = messages[i + 1];
+            return next?.role === "assistant" ? next : null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Poll getSession until an assistant reply appears after the given user turn,
+ * the session errors without a reply, the timeout elapses, or signal aborts.
+ */
+export async function waitForAssistantReply(
+    sessionId: string,
+    userContent: string,
+    options: {
+        signal?: AbortSignal;
+        kick?: RecoverKick;
+        maxMs?: number;
+    } = {},
+): Promise<RecoverResult> {
+    const maxMs = options.maxMs ?? 10 * 60 * 1000;
+    const started = Date.now();
+    let delayMs = 2000;
+
+    const wait = (ms: number) =>
+        new Promise<void>((resolve, reject) => {
+            if (options.signal?.aborted) {
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+            }
+            let settled = false;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timer);
+                options.signal?.removeEventListener("abort", onAbort);
+                if (options.kick) options.kick.nudge = null;
+                resolve();
+            };
+            const onAbort = () => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timer);
+                if (options.kick) options.kick.nudge = null;
+                reject(new DOMException("Aborted", "AbortError"));
+            };
+            const timer = window.setTimeout(finish, ms);
+            options.signal?.addEventListener("abort", onAbort, {once: true});
+            if (options.kick) options.kick.nudge = finish;
+        });
+
+    while (Date.now() - started < maxMs) {
+        if (options.signal?.aborted) return {outcome: "aborted"};
+        try {
+            const session = await getSession(sessionId);
+            const assistant = findAssistantAfterUser(session, userContent);
+            if (assistant) return {outcome: "recovered", message: assistant};
+            if (session.status === "error") return {outcome: "failed"};
+        } catch {
+            // transient — keep polling
+        }
+        const remaining = maxMs - (Date.now() - started);
+        if (remaining <= 0) break;
+        try {
+            await wait(Math.min(delayMs, remaining));
+        } catch {
+            return {outcome: "aborted"};
+        }
+        delayMs = Math.min(5000, Math.floor(delayMs * 1.5));
+    }
+    return {outcome: "timeout"};
 }
 
 export interface Credits {

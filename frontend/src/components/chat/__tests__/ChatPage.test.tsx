@@ -3,7 +3,16 @@ import {act, render, screen, waitFor} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router-dom";
 import ChatPage from "../ChatPage";
-import {createSession, getCredits, getSession, listSessions, streamMessage, uploadScan, ScanUploadError} from "@/api/chat";
+import {
+    createSession,
+    getCredits,
+    getSession,
+    listSessions,
+    streamMessage,
+    uploadScan,
+    waitForAssistantReply,
+    ScanUploadError,
+} from "@/api/chat";
 import type {StreamCallbacks, ScanUploadResult} from "@/api/chat";
 import {ChatApiError} from "@/api/errors";
 
@@ -16,6 +25,7 @@ vi.mock("@/api/chat", async (importOriginal) => {
         getCredits: vi.fn(),
         streamMessage: vi.fn(),
         uploadScan: vi.fn(),
+        waitForAssistantReply: vi.fn(),
         ScanUploadError: actual.ScanUploadError,
     };
 });
@@ -55,6 +65,7 @@ describe("ChatPage", () => {
             ],
         });
         vi.mocked(getCredits).mockResolvedValue({searches_left: 3, scans_left: 5});
+        vi.mocked(waitForAssistantReply).mockResolvedValue({outcome: "timeout"});
         vi.mocked(streamMessage).mockImplementation(
             async (sessionId: string, _content: string, callbacks: StreamCallbacks) => {
                 callbacks.onToken?.("Начните");
@@ -264,9 +275,35 @@ describe("ChatPage", () => {
         expect(screen.queryByLabelText("Сообщение ассистенту")).not.toBeInTheDocument();
     });
 
-    it("shows a connection-lost message when the stream ends without done", async () => {
+    it("recovers the assistant reply by polling getSession after a dropped stream", async () => {
         const user = userEvent.setup();
         vi.mocked(streamMessage).mockResolvedValue({finished: false});
+        vi.mocked(waitForAssistantReply).mockResolvedValue({
+            outcome: "recovered",
+            message: {id: "m-a", role: "assistant", content: "Вот восстановленный ответ"},
+        });
+
+        renderChat();
+
+        const input = await screen.findByLabelText("Сообщение ассистенту");
+        await user.type(input, "Привет{Enter}");
+
+        expect(await screen.findByText("Вот восстановленный ответ")).toBeInTheDocument();
+        expect(waitForAssistantReply).toHaveBeenCalledWith(
+            "s1",
+            "Привет",
+            expect.objectContaining({signal: expect.any(AbortSignal)}),
+        );
+        expect(screen.queryByText("Соединение прервано, попробуйте ещё раз")).not.toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.getByLabelText("Сообщение ассистенту")).not.toBeDisabled(),
+        );
+    });
+
+    it("shows a connection-lost message when recovery polling times out", async () => {
+        const user = userEvent.setup();
+        vi.mocked(streamMessage).mockResolvedValue({finished: false});
+        vi.mocked(waitForAssistantReply).mockResolvedValue({outcome: "timeout"});
 
         renderChat();
 
@@ -276,9 +313,7 @@ describe("ChatPage", () => {
         expect(
             await screen.findByText("Соединение прервано, попробуйте ещё раз"),
         ).toBeInTheDocument();
-        await waitFor(() =>
-            expect(screen.getByLabelText("Сообщение ассистенту")).not.toBeDisabled(),
-        );
+        expect(waitForAssistantReply).toHaveBeenCalled();
     });
 
     it("prefills the input from the ?q query param (landing hand-off)", async () => {

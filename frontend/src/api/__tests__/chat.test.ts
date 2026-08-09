@@ -1,11 +1,12 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {streamMessage, uploadScan, ScanUploadError} from "../chat";
+import {streamMessage, uploadScan, waitForAssistantReply, ScanUploadError} from "../chat";
 import type {StreamCallbacks, ScanUploadResult} from "../chat";
 import {apiClient} from "@/api/api";
 
 vi.mock("@/api/api", () => ({
     apiClient: {
         post: vi.fn(),
+        get: vi.fn(),
     },
 }));
 
@@ -219,5 +220,55 @@ describe("uploadScan", () => {
         vi.mocked(apiClient.post).mockRejectedValue(new Error("network down"));
         error = await uploadScan("s1", new File(["x"], "a.jpg")).catch((e) => e);
         expect((error as ScanUploadError).code).toBe("unknown");
+    });
+});
+
+describe("waitForAssistantReply", () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("returns the assistant message once it appears after the user turn", async () => {
+        const kick = {nudge: null as (() => void) | null};
+        vi.mocked(apiClient.get)
+            .mockResolvedValueOnce({
+                data: {
+                    id: "s1",
+                    status: "generating",
+                    messages: [{id: "u1", role: "user", content: "Привет"}],
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    id: "s1",
+                    status: "open",
+                    messages: [
+                        {id: "u1", role: "user", content: "Привет"},
+                        {id: "a1", role: "assistant", content: "Готово"},
+                    ],
+                },
+            });
+
+        const pending = waitForAssistantReply("s1", "Привет", {kick, maxMs: 5000});
+        await Promise.resolve();
+        await Promise.resolve();
+        kick.nudge?.();
+        await expect(pending).resolves.toEqual({
+            outcome: "recovered",
+            message: {id: "a1", role: "assistant", content: "Готово"},
+        });
+    });
+
+    it("returns failed when the session errors without an assistant reply", async () => {
+        vi.mocked(apiClient.get).mockResolvedValue({
+            data: {
+                id: "s1",
+                status: "error",
+                messages: [{id: "u1", role: "user", content: "Привет"}],
+            },
+        });
+        await expect(waitForAssistantReply("s1", "Привет")).resolves.toEqual({
+            outcome: "failed",
+        });
     });
 });

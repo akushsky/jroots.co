@@ -1,9 +1,11 @@
 """End-to-end agent-cycle tests: HTTP API + mocked MCP transport + mocked LLM."""
 
+from contextvars import ContextVar
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import (
@@ -32,6 +34,25 @@ from tests.conftest import auth_header, create_user
 from tests.test_api_chat import _parse_sse
 from tests.test_mcp_client import FakeTransport
 
+# Detached agent jobs commit on a separate AsyncSession; expire chat/billing
+# rows in the test session after SSE so assertions see those writes. Do not
+# expire User — sync auth_header(user.email) would then MissingGreenlet.
+_TEST_DB: ContextVar[AsyncSession | None] = ContextVar("agent_test_db", default=None)
+_EXPIRE_TYPES = (
+    ChatSession,
+    ChatMessage,
+    Credit,
+    CreditTransaction,
+    Payment,
+    Search,
+    ToolCallLog,
+)
+
+
+def _expire_agent_state(db: AsyncSession) -> None:
+    for obj in list(db.identity_map.values()):
+        if isinstance(obj, _EXPIRE_TYPES):
+            db.expire(obj)
 
 def _chunk(text=None, usage=None, tool_calls=None):
     delta = SimpleNamespace(content=text, tool_calls=tool_calls)
@@ -99,6 +120,13 @@ def agent_mode(monkeypatch):
     return settings
 
 
+@pytest.fixture(autouse=True)
+async def _bind_test_db(db_session):
+    token = _TEST_DB.set(db_session)
+    yield
+    _TEST_DB.reset(token)
+
+
 @pytest.fixture
 def fake_llm(monkeypatch):
     def install(scripts):
@@ -155,10 +183,14 @@ async def _post_sse(client, user, session_id, content):
         headers={**auth_header(user), "Accept": "text/event-stream"},
     )
     assert response.status_code == 200
+    db = _TEST_DB.get()
+    if db is not None:
+        _expire_agent_state(db)
     return _parse_sse(response.text)
 
 
 async def _searches(db_session, session_id):
+    _expire_agent_state(db_session)
     result = await db_session.execute(
         select(Search).where(Search.session_id == session_id)
     )
@@ -166,6 +198,7 @@ async def _searches(db_session, session_id):
 
 
 async def _session_row(db_session, session_id):
+    _expire_agent_state(db_session)
     result = await db_session.execute(
         select(ChatSession).where(ChatSession.id == session_id)
     )
@@ -1314,3 +1347,115 @@ async def test_agent_collapses_old_tool_results_in_cycle(
 
     # Digests use the shared searchlog shape.
     assert "search(gabo: Test0) → 3 результатов" in tool_msgs[0]["content"]
+
+
+async def test_detached_agent_persists_after_consumer_cancel(
+    client, db_session, agent_mode, fake_mcp, monkeypatch
+):
+    """Abandoning the SSE queue consumer must not stop the producer from persisting."""
+    import asyncio
+
+    from app.services import chat_generation
+
+    fake_mcp(FakeTransport(script=[]))
+
+    class _DelayedStream:
+        def __init__(self):
+            self._items = [
+                _chunk("Ответ после отключения клиента"),
+                _chunk(usage=_usage(10, 5)),
+            ]
+            self._started = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._started:
+                self._started = True
+                await asyncio.sleep(0.05)
+            if not self._items:
+                raise StopAsyncIteration
+            return self._items.pop(0)
+
+    class _DelayedCompletions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return _DelayedStream()
+
+    llm_client = SimpleNamespace(chat=SimpleNamespace(completions=_DelayedCompletions()))
+    monkeypatch.setattr(llm_router, "_client", llm_client)
+
+    user = await create_user(db_session, email="agent-detach@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+    session_id = session["id"]
+
+    row = await _session_row(db_session, session_id)
+    row.status = "generating"
+    await db_session.commit()
+
+    queue = chat_generation.start_agent_job(session_id, "продолжи поиск")
+    # Pull the first event, then stop reading — mimics a dropped SSE client.
+    first = await asyncio.wait_for(queue.get(), timeout=2.0)
+    assert first is not None
+
+    job = chat_generation._active_jobs.get(session_id)
+    assert job is not None
+    await asyncio.wait_for(asyncio.shield(job), timeout=5.0)
+
+    # Drain the leftover queue so the producer is fully settled.
+    while True:
+        try:
+            item = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if item is None:
+            break
+
+    session_row = await _session_row(db_session, session_id)
+    assert session_row.status == "open"
+
+    messages = (
+        await db_session.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.id)
+        )
+    ).scalars().all()
+    assert [m.role for m in messages] == ["user", "assistant"]
+    assert "Ответ после отключения" in messages[1].content
+
+
+async def test_post_message_conflict_while_generating(
+    client, db_session, agent_mode, fake_llm, fake_mcp
+):
+    fake_mcp(FakeTransport(script=[]))
+    fake_llm(
+        [
+            [
+                _chunk("не должен вызваться"),
+                _chunk(usage=_usage(1, 1)),
+            ]
+        ]
+    )
+    user = await create_user(db_session, email="agent-busy@example.com")
+    await _give_credits(db_session, user, searches=5)
+    session = await _create_session(client, user)
+
+    row = await _session_row(db_session, session["id"])
+    row.status = "generating"
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/chat/sessions/{session['id']}/messages",
+        json={"content": "ещё одно сообщение"},
+        headers={**auth_header(user), "Accept": "text/event-stream"},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "generating"
+    assert "готовится" in detail["message"]

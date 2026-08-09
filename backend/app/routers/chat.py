@@ -40,6 +40,12 @@ from app.services import credits as credits_service
 from app.services import llm_router, scan_pipeline
 from app.services.agent_loop import run_agent_cycle
 from app.services.auth import get_current_user
+from app.services.chat_generation import (
+    GENERATING_MESSAGE,
+    GENERATING_STATUS,
+    iter_agent_queue,
+    start_agent_job,
+)
 from app.services.prompts import SYSTEM_PROMPT
 
 logger = logging.getLogger("jroots")
@@ -446,6 +452,18 @@ async def _event_stream(
         yield _sse("error", {"message": GENERIC_ERROR_MESSAGE})
 
 
+async def _detached_event_stream(
+    queue,
+) -> AsyncGenerator[str, None]:
+    """SSE consumer for a detached agent job.
+
+    Client disconnect cancels this generator only — the producer keeps running
+    and still persists the assistant reply.
+    """
+    async for event, data in iter_agent_queue(queue):
+        yield _sse(event, data)
+
+
 async def _agent_json_reply(
     db: AsyncSession,
     session: ChatSession,
@@ -522,12 +540,18 @@ async def post_message(
     # caps, paywall, charging and the tool-calling loop.
     if get_settings().jroots_mcp_enabled:
         if wants_sse:
+            # Cross-worker lock: a second tab/reload must not start another cycle
+            # while the detached job is still writing the reply.
+            if session.status == GENERATING_STATUS:
+                raise HTTPException(
+                    status_code=409,
+                    detail=_error_detail("generating", GENERATING_MESSAGE),
+                )
+            session.status = GENERATING_STATUS
+            await db.commit()
+            queue = start_agent_job(session.id, body.content, scan_ids=scan_ids)
             return StreamingResponse(
-                _event_stream(
-                    db,
-                    session,
-                    run_agent_cycle(db, session, body.content, scan_ids=scan_ids),
-                ),
+                _detached_event_stream(queue),
                 media_type="text/event-stream",
             )
         return await _agent_json_reply(db, session, body.content, scan_ids=scan_ids)
