@@ -52,24 +52,27 @@ def generate_logging_config(loki_hostname: str = "loki", environment: str = "dev
     except ImportError:
         pass
 
-    try:
-        import logging_loki  # noqa: F401
+    # Beta/test stacks are not on the Loki docker network; a sync LokiHandler
+    # that cannot resolve `loki` blocks gunicorn workers on every log line.
+    if loki_hostname and environment not in {"beta", "test"}:
+        try:
+            import logging_loki  # noqa: F401
 
-        handlers["loki"] = {
-            "class": "logging_loki.LokiHandler",
-            "level": "INFO",
-            "formatter": "json" if "json" in formatters else "colored",
-            "url": f"http://{loki_hostname}:3100/loki/api/v1/push",
-            "tags": {
-                "app": "jroots",
-                "env": environment,
-                "service": "backend",
-                "logger": "jroots",
-            },
-            "version": "1",
-        }
-    except ImportError:
-        pass
+            handlers["loki"] = {
+                "class": "logging_loki.LokiHandler",
+                "level": "INFO",
+                "formatter": "json" if "json" in formatters else "colored",
+                "url": f"http://{loki_hostname}:3100/loki/api/v1/push",
+                "tags": {
+                    "app": "jroots",
+                    "env": environment,
+                    "service": "backend",
+                    "logger": "jroots",
+                },
+                "version": "1",
+            }
+        except ImportError:
+            pass
 
     config = {
         "version": 1,

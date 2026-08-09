@@ -89,9 +89,22 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # Coolify generates Host(`chat.jroots.co`) routers but historically omits the
+    # service/port bind for this compose service; without these labels Traefik
+    # accepts TLS and then hangs. Also pin the docker network Traefik should use
+    # when the container is attached to chat_internal + coolify.
+    labels:
+      - traefik.docker.network=coolify
+      - traefik.http.services.jroots-chat-frontend.loadbalancer.server.port=80
+      - traefik.http.routers.http-0-azxu1e5y9eauzbmqjgrfugx9-frontend.service=jroots-chat-frontend
+      - traefik.http.routers.https-0-azxu1e5y9eauzbmqjgrfugx9-frontend.service=jroots-chat-frontend
     networks:
-      - chat_internal
-      - coolify
+      chat_internal:
+        aliases:
+          - jroots-chat-frontend
+      coolify:
+        aliases:
+          - jroots-chat-frontend
     restart: unless-stopped
     deploy:
       resources:
