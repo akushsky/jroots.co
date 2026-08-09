@@ -258,6 +258,26 @@ async def test_rate_limit_one_rps_per_database():
     assert t3 - t2 < 0.05
 
 
+async def test_buried_error_banner_is_not_counted_as_a_hit():
+    """Pamyat used to wrap 401 under a title; must not become results_count=1."""
+    body = (
+        "Pamyat Naroda (Memory of the People) Search\n"
+        "Source: pamyat-naroda.ru\n"
+        "==================================================\n\n"
+        "Error: HTTP error during search: Client error '401 Unauthorized'\n"
+    )
+    transport = FakeTransport(script=[McpCallResult(text=body)])
+    client = _client(transport, rate_limit_interval=0)
+    await client.open()
+    text = await client.call(
+        "search", {"database": "pamyat_naroda", "last_name": "Гольдберг"}
+    )
+    assert text == body
+    assert client.call_log[0].is_error is True
+    assert client.call_log[0].result_count == 0
+    assert client.searches_with_results == 0
+
+
 async def test_timeout_is_retried_once_and_recovers():
     transport = FakeTransport(script=[TimeoutError(), McpCallResult(text="ok")])
     client = _client(transport, rate_limit_interval=0)

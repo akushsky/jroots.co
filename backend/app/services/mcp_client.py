@@ -394,7 +394,14 @@ class McpArchiveClient:
         # Teaser tier: the model gets the sanitized text (ciphers masked,
         # URLs swapped for ref:N handles) — it cannot leak what it never saw.
         text = self._sanitize_result_text(raw_text)
-        is_error = result.is_error or text.lstrip().startswith("Error:")
+        # Handlers sometimes bury "Error:" under a banner; treat any leading
+        # or early Error: line as failure so 401 pages aren't "1 результат".
+        stripped = text.lstrip()
+        is_error = (
+            result.is_error
+            or stripped.startswith("Error:")
+            or "\nError:" in text[:500]
+        )
         result_count: int | None = None
         if name == "search":
             result_count = 0 if is_error else estimate_result_count(text)
