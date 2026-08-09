@@ -571,7 +571,9 @@ _SEARCHLOG_ARG_KEYS = (
 
 _STATUS_OUTCOME = {
     "error": "error",
-    "cap_blocked": "недоступен",
+    # Cap is our session tool budget — not an archive outage. Models were
+    # inventing "HTTP 401 / Память народа лежит" from the old wording.
+    "cap_blocked": "лимит вызовов",
 }
 
 
